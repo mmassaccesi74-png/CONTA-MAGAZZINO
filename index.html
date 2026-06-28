@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B1B1D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Conta Magazzino</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#1B1B1D;
+    --surface:#242427;
+    --surface-2:#2D2D31;
+    --accent:#F4C20D;
+    --accent-ink:#1B1B1D;
+    --ok:#4FA876;
+    --danger:#E2533D;
+    --text:#F2F0EA;
+    --text-dim:#A8A6A0;
+    --border:#3A3A3E;
+    --font-display:'sans-serif-condensed','Arial Narrow',sans-serif;
+    --font-mono:'Roboto Mono',ui-monospace,'SF Mono',Consolas,monospace;
+    --font-body:-apple-system,Roboto,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--font-body);
+    -webkit-tap-highlight-color:transparent;}
+  body{
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size:18px 18px;
+    min-height:100vh;
+    padding-bottom:78px;
+  }
+  button{font-family:inherit;}
+  ::selection{background:var(--accent);color:var(--accent-ink);}
+
+  header.topbar{
+    position:sticky;top:0;z-index:20;
+    background:linear-gradient(180deg, var(--bg) 70%, rgba(27,27,29,0.85));
+    border-bottom:3px solid var(--accent);
+    padding:14px 16px 10px;
+  }
+  .brand{
+    display:flex;align-items:baseline;gap:8px;
+  }
+  .brand .mark{
+    font-family:var(--font-display);font-weight:900;font-size:22px;letter-spacing:0.5px;
+    color:var(--accent);
+  }
+  .brand .sub{font-size:11px;color:var(--text-dim);font-family:var(--font-mono);letter-spacing:1px;text-transform:uppercase;}
+  .session-strip{
+    margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    font-size:13px;color:var(--text-dim);
+  }
+  .session-strip .name{color:var(--text);font-weight:600;}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);
+    border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:12px;
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);}
+
+  main{padding:14px 16px 24px;max-width:560px;margin:0 auto;}
+  .panel{display:none;}
+  .panel.active{display:block;animation:fadeIn .15s ease-out;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  h2.section-title{
+    font-family:var(--font-display);font-weight:800;font-size:19px;letter-spacing:.3px;
+    margin:18px 0 10px;color:var(--text);
+  }
+  h2.section-title:first-child{margin-top:0;}
+  p.hint{color:var(--text-dim);font-size:13px;line-height:1.5;margin:4px 0 14px;}
+
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;
+  }
+  label{display:block;font-size:12px;color:var(--text-dim);margin:0 0 5px;text-transform:uppercase;letter-spacing:.5px;}
+  input[type=text],input[type=number],input[type=date],select,textarea{
+    width:100%;background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+    padding:11px 12px;border-radius:8px;font-size:15px;margin-bottom:12px;font-family:var(--font-body);
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  textarea{resize:vertical;min-height:50px;}
+
+  .row{display:flex;gap:10px;}
+  .row > *{flex:1;}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    padding:12px 16px;border-radius:9px;border:1px solid var(--border);
+    background:var(--surface-2);color:var(--text);font-weight:600;font-size:14px;cursor:pointer;
+    width:100%;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+  .btn-danger{background:transparent;color:var(--danger);border-color:var(--danger);}
+  .btn-ghost{background:transparent;}
+  .btn-sm{padding:8px 10px;font-size:13px;width:auto;}
+  .btn-row{display:flex;gap:8px;}
+  .btn-row .btn{flex:1;}
+
+  .search-wrap{position:relative;}
+  .suggestions{
+    position:absolute;left:0;right:0;top:calc(100% - 8px);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:10px;max-height:220px;overflow:auto;z-index:30;
+    box-shadow:0 10px 24px rgba(0,0,0,.4);
+  }
+  .suggestions div{padding:10px 12px;border-bottom:1px solid var(--border);font-size:14px;cursor:pointer;}
+  .suggestions div:last-child{border-bottom:none;}
+  .suggestions .code{font-family:var(--font-mono);color:var(--accent);font-size:12px;}
+  .suggestions div:active{background:var(--surface);}
+
+  .tag-card{
+    position:relative;background:var(--surface);border:1px solid var(--border);
+    clip-path:polygon(0 14px,14px 0,100% 0,100% 100%,0 100%);
+    padding:14px 14px 14px 18px;margin-bottom:10px;
+  }
+  .tag-card::before{
+    content:"";position:absolute;top:6px;left:6px;width:5px;height:5px;border-radius:50%;
+    background:var(--accent);
+  }
+  .tag-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .tag-code{font-family:var(--font-mono);background:var(--accent);color:var(--accent-ink);
+    font-size:12px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:.5px;}
+  .tag-name{font-size:14.5px;font-weight:600;margin-top:6px;}
+  .tag-meta{font-size:12px;color:var(--text-dim);margin-top:3px;font-family:var(--font-mono);}
+  .tag-qty-row{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .stepper{display:flex;align-items:center;background:var(--surface-2);border-radius:8px;border:1px solid var(--border);overflow:hidden;}
+  .stepper button{background:transparent;border:none;color:var(--text);font-size:16px;width:34px;height:36px;cursor:pointer;}
+  .stepper button:active{background:var(--surface);}
+  .stepper input{width:56px;text-align:center;border:none;background:transparent;margin:0;font-size:15px;font-weight:700;}
+  .icon-btn{background:transparent;border:none;color:var(--text-dim);font-size:16px;padding:6px;cursor:pointer;}
+  .icon-btn.danger{color:var(--danger);}
+  .tag-extra{margin-top:10px;display:none;}
+  .tag-extra.open{display:block;}
+  .tag-extra input,.tag-extra textarea{margin-bottom:8px;}
+  .toggle-link{font-size:12px;color:var(--accent);background:none;border:none;margin-top:8px;cursor:pointer;padding:0;}
+
+  .empty{
+    text-align:center;color:var(--text-dim);padding:30px 10px;font-size:14px;
+    border:1px dashed var(--border);border-radius:12px;
+  }
+
+  .stat-strip{display:flex;gap:8px;margin-bottom:14px;}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;}
+  .stat .num{font-family:var(--font-display);font-size:22px;font-weight:800;color:var(--accent);}
+  .stat .lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;}
+
+  nav.tabbar{
+    position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);
+    display:flex;z-index:40;padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav.tabbar button{
+    flex:1;background:none;border:none;color:var(--text-dim);font-size:11px;padding:9px 0 8px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;font-family:var(--font-body);
+  }
+  nav.tabbar button.active{color:var(--accent);}
+  nav.tabbar .ic{font-size:18px;}
+
+  .modal-bg{
+    position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:100;
+  }
+  .modal-bg.open{display:flex;}
+  .scan-box{background:var(--surface);border-radius:14px;padding:14px;width:92%;max-width:420px;}
+  .scan-box video{width:100%;border-radius:10px;background:#000;aspect-ratio:3/4;object-fit:cover;}
+  .scan-frame{position:relative;}
+  .scan-frame::after{
+    content:"";position:absolute;inset:18%;border:2px solid var(--accent);border-radius:10px;pointer-events:none;
+  }
+  .toast{
+    position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--surface-2);
+    border:1px solid var(--accent);color:var(--text);padding:10px 16px;border-radius:30px;font-size:13px;
+    z-index:200;opacity:0;transition:opacity .25s;pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+
+  .item-list-row{display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid var(--border);}
+  .item-list-row .c{font-family:var(--font-mono);color:var(--accent);}
+  .session-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;}
+  .session-row .top{display:flex;justify-content:space-between;align-items:center;}
+  .session-row .nm{font-weight:700;}
+  .session-row .meta{font-size:12px;color:var(--text-dim);margin-top:2px;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">CONTA MAGAZZINO</span>
+    <span class="sub">Inventario → SAP B1</span>
+  </div>
+  <div class="session-strip" id="sessionStrip">
+    <span>Nessuna sessione attiva</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- CONTEGGIO -->
+  <section class="panel active" id="panel-conteggio">
+
+    <div id="noSessionBlock">
+      <h2 class="section-title">Nuovo conteggio</h2>
+      <p class="hint">Apri una sessione di conteggio per iniziare a registrare gli articoli. Ogni sessione resta salvata sul dispositivo e potrai esportarla in Excel quando vuoi.</p>
+      <div class="card">
+        <label>Nome sessione</label>
+        <input type="text" id="newSessionName" placeholder="Es. Inventario Magazzino 01">
+        <label>Codice magazzino (opzionale)</label>
+        <input type="text" id="newSessionWhs" placeholder="Es. 01">
+        <button class="btn btn-primary" onclick="createSession()">Inizia conteggio</button>
+      </div>
+    </div>
+
+    <div id="activeSessionBlock" style="display:none;">
+      <div class="stat-strip">
+        <div class="stat"><div class="num" id="statLines">0</div><div class="lbl">Righe</div></div>
+        <div class="stat"><div class="num" id="statQty">0</div><div class="lbl">Qtà totale</div></div>
+      </div>
+
+      <div class="card">
+        <label>Codice articolo</label>
+        <div class="row">
+          <div class="search-wrap" style="flex:1;">
+            <input type="text" id="codeInput" placeholder="Scansiona o digita il codice" autocomplete="off">
+            <div class="suggestions" id="suggestions" style="display:none;"></div>
+          </div>
+          <button class="btn btn-primary" style="flex:0 0 90px;" onclick="openScan()">📷 Scan</button>
+        </div>
+        <label>Descrizione</label>
+        <input type="text" id="nameInput" placeholder="Descrizione articolo">
+        <div class="row">
+          <div>
+            <label>Magazzino</label>
+            <input type="text" id="whsInput" placeholder="01">
+          </div>
+          <div>
+            <label>Ubicazione</label>
+            <input type="text" id="binInput" placeholder="A-12-03">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Unità di misura</label>
+            <input type="text" id="uomInput" placeholder="PZ">
+          </div>
+          <div>
+            <label>Quantità contata</label>
+            <input type="number" id="qtyInput" placeholder="0" inputmode="decimal">
+          </div>
+        </div>
+        <label>Note (opzionale)</label>
+        <textarea id="noteInput" placeholder="Note sul conteggio"></textarea>
+        <button class="btn btn-primary" onclick="addLine()">Aggiungi al conteggio</button>
+      </div>
+
+      <h2 class="section-title">Righe contate</h2>
+      <div id="linesList"></div>
+      <button class="btn btn-ghost" style="color:var(--danger);" onclick="closeSession()">Chiudi sessione (resta salvata)</button>
+    </div>
+  </section>
+
+  <!-- CATALOGO -->
+  <section class="panel" id="panel-catalogo">
+    <h2 class="section-title">Catalogo articoli</h2>
+    <p class="hint">Importa un file Excel/CSV con l'elenco articoli (es. esportato da SAP B1) per ritrovare automaticamente descrizione, UM e magazzino quando scansioni un codice. Colonne riconosciute: Codice/ItemCode, Descrizione/ItemName, UM/UoM, Magazzino/WhsCode, Ubicazione/BinCode.</p>
+    <div class="card">
+      <input type="file" id="catalogFile" accept=".xlsx,.xls,.csv" style="margin-bottom:10px;">
+      <button class="btn btn-primary" onclick="importCatalog()">Importa file</button>
+    </div>
+    <div class="card" id="catalogStatusCard">
+      <div id="catalogStatus">Nessun catalogo caricato.</div>
+    </div>
+    <div id="catalogBrowse"></div>
+    <button class="btn btn-danger" onclick="clearCatalog()">Svuota catalogo</button>
+  </section>
+
+  <!-- SESSIONI -->
+  <section class="panel" id="panel-sessioni">
+    <h2 class="section-title">Sessioni salvate</h2>
+    <div id="sessionsList"></div>
+  </section>
+
+  <!-- ESPORTA -->
+  <section class="panel" id="panel-esporta">
+    <h2 class="section-title">Esporta per SAP B1</h2>
+    <p class="hint">Genera un file con le righe contate, pronto da incollare/mappare nel tuo template DTW (Data Transfer Workbench) per il documento di Conteggio Inventario (OINC/INV1), oppure da usare per la verifica manuale prima dell'import.</p>
+    <div class="card">
+      <label>Sessione da esportare</label>
+      <select id="exportSessionSelect"></select>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="exportXlsx()">Esporta Excel (.xlsx)</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn" onclick="exportCsv()">Esporta CSV</button>
+      </div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-primary" onclick="exportDtw()">Esporta per import DTW (Conteggio Inventario)</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">Genera un file con le colonne esatte dei template <strong>InventoryCounting</strong> (testata) e <strong>InventoryCountingLines</strong> (righe), pronto da incollare nel DTW. Verifica comunque BinEntry e UoMCode se usati nel tuo sistema, e testa il primo import su un documento di prova.</p>
+    </div>
+  </section>
+
+</main>
+
+<nav class="tabbar">
+  <button class="tab-btn active" data-tab="conteggio" onclick="showTab('conteggio')"><span class="ic">📋</span>Conteggio</button>
+  <button class="tab-btn" data-tab="catalogo" onclick="showTab('catalogo')"><span class="ic">📦</span>Catalogo</button>
+  <button class="tab-btn" data-tab="sessioni" onclick="showTab('sessioni')"><span class="ic">🗂️</span>Sessioni</button>
+  <button class="tab-btn" data-tab="esporta" onclick="showTab('esporta')"><span class="ic">⇪</span>Esporta</button>
+</nav>
+
+<div class="modal-bg" id="scanModal">
+  <div class="scan-box">
+    <div class="scan-frame">
+      <video id="scanVideo" muted playsinline></video>
+    </div>
+    <p class="hint" id="scanHint" style="margin-top:10px;">Inquadra il codice a barre o il QR code dell'articolo.</p>
+    <button class="btn btn-danger" onclick="stopScan()">Annulla</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- Storage helpers ---------- */
+const STORE_CATALOG = 'wms_catalog_v1';
+const STORE_SESSIONS = 'wms_sessions_v1';
+const STORE_ACTIVE = 'wms_active_session_v1';
+
+function loadJSON(key, fallback){
+  try{
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  }catch(e){
+    console.error('Errore lettura storage', key, e);
+    return fallback;
+  }
+}
+function saveJSON(key, value){
+  try{
+    localStorage.setItem(key, JSON.stringify(value));
+  }catch(e){
+    console.error('Errore scrittura storage', key, e);
+    toast('Errore nel salvataggio dati sul dispositivo');
+  }
+}
+
+let catalog = loadJSON(STORE_CATALOG, []);          // [{code,name,uom,whs,bin}]
+let sessions = loadJSON(STORE_SESSIONS, {});        // id -> session
+let activeSessionId = loadJSON(STORE_ACTIVE, null);
+
+/* ---------- Utilities ---------- */
+function uid(){ return 's' + Date.now() + Math.random().toString(16).slice(2,7); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------- Tabs ---------- */
+function showTab(name){
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  if(name === 'catalogo') renderCatalogBrowse();
+  if(name === 'sessioni') renderSessionsList();
+  if(name === 'esporta') renderExportSelect();
+}
+
+/* ---------- Catalog import ---------- */
+const HEADER_MAP = {
+  code: ['itemcode','codicearticolo','codearticolo','codice','code','articolo','itemno','codarticolo'],
+  name: ['itemname','itemdescription','descrizione','description','nomearticolo','nome','desc'],
+  uom:  ['uom','um','unitamisura','unit','unitofmeasure','inventoryuom'],
+  whs:  ['whscode','warehouse','warehousecode','magazzino','whs','codmagazzino'],
+  bin:  ['bincode','bin','binlocation','ubicazione','location','codubicazione','binlocationcode']
+};
+function normHeader(h){ return String(h).toLowerCase().replace(/[^a-z0-9]/g,''); }
+function mapRow(row){
+  const lowMap = {};
+  Object.keys(row).forEach(k => lowMap[normHeader(k)] = k);
+  function find(field){
+    for(const cand of HEADER_MAP[field]){
+      if(lowMap[cand] !== undefined) return row[lowMap[cand]];
+    }
+    return '';
+  }
+  return {
+    code: String(find('code')).trim(),
+    name: String(find('name')).trim(),
+    uom:  String(find('uom')).trim(),
+    whs:  String(find('whs')).trim(),
+    bin:  String(find('bin')).trim()
+  };
+}
+
+function importCatalog(){
+  const fileInput = document.getElementById('catalogFile');
+  const file = fileInput.files[0];
+  if(!file){ toast('Seleziona prima un file'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try{
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+      const mapped = rows.map(mapRow).filter(r => r.code);
+      const dedup = {};
+      mapped.forEach(r => dedup[r.code] = r);
+      catalog = Object.values(dedup);
+      saveJSON(STORE_CATALOG, catalog);
+      document.getElementById('catalogStatus').textContent =
+        catalog.length + ' articoli caricati nel catalogo.';
+      renderCatalogBrowse();
+      toast('Catalogo importato: ' + catalog.length + ' articoli');
+    }catch(err){
+      console.error(err);
+      toast('Errore nella lettura del file. Verifica il formato.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function clearCatalog(){
+  if(!confirm('Svuotare tutto il catalogo articoli?')) return;
+  catalog = [];
+  saveJSON(STORE_CATALOG, catalog);
+  document.getElementById('catalogStatus').textContent = 'Nessun catalogo caricato.';
+  renderCatalogBrowse();
+}
+function renderCatalogBrowse(){
+  const el = document.getElementById('catalogBrowse');
+  if(!catalog.length){ el.innerHTML = ''; return; }
+  const sample = catalog.slice(0, 50);
+  el.innerHTML = '<div class="card"><label>Anteprima (' + catalog.length + ' totali, primi 50)</label>' +
+    sample.map(r => `<div class="item-list-row"><span class="c">${escapeHtml(r.code)}</span><span>${escapeHtml(r.name)}</span></div>`).join('') +
+    '</div>';
+}
+if(catalog.length){
+  document.getElementById('catalogStatus').textContent = catalog.length + ' articoli caricati nel catalogo.';
+}
+
+/* ---------- Session management ---------- */
+function createSession(){
+  const name = document.getElementById('newSessionName').value.trim() || ('Inventario ' + todayStr());
+  const whs = document.getElementById('newSessionWhs').value.trim();
+  const id = uid();
+  sessions[id] = { id, name, whs, date: todayStr(), lines: [] };
+  activeSessionId = id;
+  saveJSON(STORE_SESSIONS, sessions);
+  saveJSON(STORE_ACTIVE, activeSessionId);
+  renderSessionBar();
+  renderActiveSession();
+  toast('Sessione "' + name + '" avviata');
+}
+function closeSession(){
+  activeSessionId = null;
+  saveJSON(STORE_ACTIVE, activeSessionId);
+  renderSessionBar();
+  renderActiveSession();
+}
+function getActiveSession(){
+  return activeSessionId ? sessions[activeSessionId] : null;
+}
+function renderSessionBar(){
+  const strip = document.getElementById('sessionStrip');
+  const s = getActiveSession();
+  if(!s){ strip.innerHTML = '<span>Nessuna sessione attiva</span>'; return; }
+  strip.innerHTML = `<span class="name">${escapeHtml(s.name)}</span>
+    <span class="pill"><span class="dot"></span>${escapeHtml(s.whs || 'Magazzino n/d')}</span>`;
+}
+function renderActiveSession(){
+  const s = getActiveSession();
+  document.getElementById('noSessionBlock').style.display = s ? 'none' : 'block';
+  document.getElementById('activeSessionBlock').style.display = s ? 'block' : 'none';
+  if(s){
+    if(s.whs) document.getElementById('whsInput').value = s.whs;
+    renderLines();
+  }
+}
+
+/* ---------- Add / edit lines ---------- */
+function findInCatalog(code){
+  return catalog.find(r => r.code.toLowerCase() === String(code).trim().toLowerCase());
+}
+
+document.getElementById('codeInput').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  const box = document.getElementById('suggestions');
+  if(!q || !catalog.length){ box.style.display='none'; return; }
+  const matches = catalog.filter(r =>
+    r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
+  ).slice(0,8);
+  if(!matches.length){ box.style.display='none'; return; }
+  box.innerHTML = matches.map(r =>
+    `<div onclick='pickSuggestion("${r.code.replace(/"/g,'&quot;')}")'><span class="code">${escapeHtml(r.code)}</span> — ${escapeHtml(r.name)}</div>`
+  ).join('');
+  box.style.display = 'block';
+});
+function pickSuggestion(code){
+  const r = findInCatalog(code);
+  document.getElementById('suggestions').style.display = 'none';
+  if(r){ fillFromCatalog(r); }
+  document.getElementById('qtyInput').focus();
+}
+function fillFromCatalog(r){
+  document.getElementById('codeInput').value = r.code;
+  document.getElementById('nameInput').value = r.name;
+  document.getElementById('uomInput').value = r.uom;
+  if(r.whs) document.getElementById('whsInput').value = r.whs;
+  if(r.bin) document.getElementById('binInput').value = r.bin;
+}
+document.getElementById('codeInput').addEventListener('blur', () => {
+  setTimeout(() => { document.getElementById('suggestions').style.display = 'none'; }, 150);
+});
+
+function addLine(){
+  const s = getActiveSession();
+  if(!s){ toast('Apri prima una sessione di conteggio'); return; }
+  const code = document.getElementById('codeInput').value.trim();
+  const qty = parseFloat(document.getElementById('qtyInput').value);
+  if(!code){ toast('Inserisci il codice articolo'); return; }
+  if(isNaN(qty)){ toast('Inserisci una quantità valida'); return; }
+  const line = {
+    id: uid(),
+    code,
+    name: document.getElementById('nameInput').value.trim(),
+    uom: document.getElementById('uomInput').value.trim(),
+    whs: document.getElementById('whsInput').value.trim(),
+    bin: document.getElementById('binInput').value.trim(),
+    qty,
+    note: document.getElementById('noteInput').value.trim(),
+    ts: new Date().toISOString()
+  };
+  const existing = s.lines.find(l => l.code === code && l.bin === line.bin);
+  if(existing){
+    existing.qty = (parseFloat(existing.qty) || 0) + qty;
+    toast('Quantità aggiornata per ' + code + ': ' + existing.qty);
+  }else{
+    s.lines.push(line);
+    toast('Articolo aggiunto: ' + code);
+  }
+  saveJSON(STORE_SESSIONS, sessions);
+  ['codeInput','nameInput','qtyInput','noteInput'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('binInput').value = '';
+  document.getElementById('codeInput').focus();
+  renderLines();
+}
+
+function renderLines(){
+  const s = getActiveSession();
+  const list = document.getElementById('linesList');
+  if(!s || !s.lines.length){
+    list.innerHTML = '<div class="empty">Nessun articolo ancora contato.<br>Scansiona o cerca un codice per iniziare.</div>';
+    document.getElementById('statLines').textContent = '0';
+    document.getElementById('statQty').textContent = '0';
+    return;
+  }
+  let totalQty = 0;
+  list.innerHTML = s.lines.map(l => {
+    totalQty += parseFloat(l.qty) || 0;
+    return `
+    <div class="tag-card">
+      <div class="tag-top">
+        <div>
+          <span class="tag-code">${escapeHtml(l.code)}</span>
+          <div class="tag-name">${escapeHtml(l.name || '(senza descrizione)')}</div>
+          <div class="tag-meta">Mag ${escapeHtml(l.whs||'-')} · Ubic ${escapeHtml(l.bin||'-')} · ${escapeHtml(l.uom||'')}</div>
+        </div>
+        <button class="icon-btn danger" onclick="deleteLine('${l.id}')">✕</button>
+      </div>
+      <div class="tag-qty-row">
+        <div class="stepper">
+          <button onclick="bumpQty('${l.id}', -1)">−</button>
+          <input type="number" value="${l.qty}" onchange="setQty('${l.id}', this.value)">
+          <button onclick="bumpQty('${l.id}', 1)">+</button>
+        </div>
+        <button class="icon-btn" onclick="bumpQty('${l.id}', 10)">+10</button>
+        <button class="toggle-link" onclick="toggleExtra('${l.id}')" style="margin-left:auto;">Dettagli ›</button>
+      </div>
+      <div class="tag-extra" id="extra-${l.id}">
+        <label>Ubicazione</label>
+        <input type="text" value="${escapeHtml(l.bin)}" onchange="setField('${l.id}','bin',this.value)">
+        <label>Note</label>
+        <textarea onchange="setField('${l.id}','note',this.value)">${escapeHtml(l.note)}</textarea>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('statLines').textContent = s.lines.length;
+  document.getElementById('statQty').textContent = totalQty;
+}
+function toggleExtra(id){
+  document.getElementById('extra-' + id).classList.toggle('open');
+}
+function bumpQty(id, delta){
+  const s = getActiveSession();
+  const l = s.lines.find(x => x.id === id);
+  l.qty = (parseFloat(l.qty)||0) + delta;
+  saveJSON(STORE_SESSIONS, sessions);
+  renderLines();
+}
+function setQty(id, val){
+  const s = getActiveSession();
+  const l = s.lines.find(x => x.id === id);
+  l.qty = parseFloat(val) || 0;
+  saveJSON(STORE_SESSIONS, sessions);
+  renderLines();
+}
+function setField(id, field, val){
+  const s = getActiveSession();
+  const l = s.lines.find(x => x.id === id);
+  l[field] = val;
+  saveJSON(STORE_SESSIONS, sessions);
+}
+function deleteLine(id){
+  const s = getActiveSession();
+  s.lines = s.lines.filter(x => x.id !== id);
+  saveJSON(STORE_SESSIONS, sessions);
+  renderLines();
+}
+
+/* ---------- Sessions tab ---------- */
+function renderSessionsList(){
+  const el = document.getElementById('sessionsList');
+  const ids = Object.keys(sessions).sort((a,b) => sessions[b].date.localeCompare(sessions[a].date));
+  if(!ids.length){ el.innerHTML = '<div class="empty">Nessuna sessione salvata.</div>'; return; }
+  el.innerHTML = ids.map(id => {
+    const s = sessions[id];
+    const qty = s.lines.reduce((a,l)=>a+(parseFloat(l.qty)||0),0);
+    return `<div class="session-row">
+      <div class="top">
+        <div class="nm">${escapeHtml(s.name)}</div>
+        <span class="pill">${s.lines.length} righe</span>
+      </div>
+      <div class="meta">${escapeHtml(s.date)} · Mag ${escapeHtml(s.whs||'-')} · Qtà tot. ${qty}</div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn btn-sm" onclick="openSession('${id}')">Apri</button>
+        <button class="btn btn-sm" onclick="goExport('${id}')">Esporta</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteSession('${id}')">Elimina</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function openSession(id){
+  activeSessionId = id;
+  saveJSON(STORE_ACTIVE, activeSessionId);
+  renderSessionBar();
+  renderActiveSession();
+  showTab('conteggio');
+}
+function deleteSession(id){
+  if(!confirm('Eliminare definitivamente questa sessione?')) return;
+  delete sessions[id];
+  if(activeSessionId === id) activeSessionId = null;
+  saveJSON(STORE_SESSIONS, sessions);
+  saveJSON(STORE_ACTIVE, activeSessionId);
+  renderSessionBar();
+  renderActiveSession();
+  renderSessionsList();
+}
+function goExport(id){
+  showTab('esporta');
+  document.getElementById('exportSessionSelect').value = id;
+}
+
+/* ---------- Export ---------- */
+function renderExportSelect(){
+  const sel = document.getElementById('exportSessionSelect');
+  const ids = Object.keys(sessions).sort((a,b) => sessions[b].date.localeCompare(sessions[a].date));
+  if(!ids.length){ sel.innerHTML = '<option value="">Nessuna sessione disponibile</option>'; return; }
+  sel.innerHTML = ids.map(id => `<option value="${id}">${escapeHtml(sessions[id].name)} (${sessions[id].date})</option>`).join('');
+  if(activeSessionId && sessions[activeSessionId]) sel.value = activeSessionId;
+}
+function buildExportRows(s){
+  const header = ['Codice Articolo','Descrizione','Magazzino','Ubicazione','UM','Quantita Contata','Note','Data Conteggio'];
+  const rows = s.lines.map(l => [l.code, l.name, l.whs, l.bin, l.uom, l.qty, l.note, s.date]);
+  return [header, ...rows];
+}
+function getSelectedSession(){
+  const id = document.getElementById('exportSessionSelect').value;
+  return id ? sessions[id] : null;
+}
+function sanitizeFilename(s){
+  return s.replace(/[^a-z0-9_\- ]/gi,'_');
+}
+function exportXlsx(){
+  const s = getSelectedSession();
+  if(!s){ toast('Seleziona una sessione'); return; }
+  if(!s.lines.length){ toast('La sessione non ha righe da esportare'); return; }
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(buildExportRows(s));
+  XLSX.utils.book_append_sheet(wb, ws, 'Conteggio');
+
+  const note = [
+    ['Guida import su SAP B1'],
+    ['Questo file riporta il conteggio fatto da app. Non è un template DTW ufficiale.'],
+    ['Per importarlo, apri il tuo template DTW per "Inventory Counting Transactions" (oggetto OINC / dettaglio INV1)'],
+    ['e mappa le colonne: Codice Articolo -> ItemCode, Magazzino -> WhsCode, Quantita Contata -> CountedQuantity.'],
+    ['Verifica i nomi esatti delle colonne nel template della tua azienda, perché possono variare per versione o personalizzazioni.'],
+    ['Si raccomanda di testare prima su un documento in bozza prima di confermare l-inventario.']
+  ];
+  const ws2 = XLSX.utils.aoa_to_sheet(note);
+  XLSX.utils.book_append_sheet(wb, ws2, 'Guida_Import_SAP');
+
+  const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  downloadBlob(new Blob([wbout], {type:'application/octet-stream'}), 'Conteggio_' + sanitizeFilename(s.name) + '_' + s.date + '.xlsx');
+  toast('File Excel generato');
+}
+
+/* ---------- DTW-specific export (InventoryCounting / InventoryCountingLines) ---------- */
+const DTW_HEADER_COLS = ['DocumentEntry','DocumentNumber','Series','CountDate','CountTime','SingleCounterType',
+  'SingleCounterID','DocumentStatus','Remarks','Reference2','BranchID','DocObjectCodeEx','FinancialPeriod',
+  'PeriodIndicator','CountingType'];
+const DTW_LINES_COLS = ['ParentKey','LineNum','DocumentEntry','LineNumber','ItemCode','ItemDescription','Freeze',
+  'WarehouseCode','BinEntry','InWarehouseQuantity','Counted','UoMCode','BarCode','UoMCountedQuantity','ItemsPerUnit',
+  'CountedQuantity','Variance','VariancePercentage','VisualOrder','TargetEntry','TargetLine','TargetType',
+  'TargetReference','ProjectCode','Manufacturer','SupplierCatalogNo','PreferredVendor','CostingCode','CostingCode2',
+  'CostingCode3','CostingCode4','CostingCode5','Remarks','LineStatus','CounterType','CounterID','MultipleCounterRole'];
+
+function blankRow(cols){
+  const o = {}; cols.forEach(c => o[c] = ''); return o;
+}
+function rowToArray(cols, obj){
+  return cols.map(c => obj[c] !== undefined ? obj[c] : '');
+}
+function exportDtw(){
+  const s = getSelectedSession();
+  if(!s){ toast('Seleziona una sessione'); return; }
+  if(!s.lines.length){ toast('La sessione non ha righe da esportare'); return; }
+
+  const key = '1'; // chiave temporanea che collega testata e righe per un documento nuovo
+
+  const headerRow = blankRow(DTW_HEADER_COLS);
+  headerRow.DocumentEntry = key;
+  headerRow.CountDate = s.date;
+  headerRow.Remarks = s.name;
+
+  const headerSheetData = [DTW_HEADER_COLS, DTW_HEADER_COLS, rowToArray(DTW_HEADER_COLS, headerRow)];
+
+  const linesSheetData = [DTW_LINES_COLS, DTW_LINES_COLS];
+  s.lines.forEach((l, idx) => {
+    const r = blankRow(DTW_LINES_COLS);
+    r.ParentKey = key;
+    r.LineNum = idx;
+    r.ItemCode = l.code;
+    r.ItemDescription = l.name;
+    r.WarehouseCode = l.whs;
+    r.CountedQuantity = l.qty;
+    r.UoMCode = l.uom;
+    r.Remarks = l.note;
+    linesSheetData.push(rowToArray(DTW_LINES_COLS, r));
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(headerSheetData), 'InventoryCounting');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linesSheetData), 'InventoryCountingLines');
+
+  const guide = [
+    ['Guida import DTW - Conteggio Inventario'],
+    ['Foglio "InventoryCounting": una sola riga, la testata del nuovo documento.'],
+    ['Foglio "InventoryCountingLines": una riga per ogni articolo contato.'],
+    ['"DocumentEntry" nella testata e "ParentKey" nelle righe sono la stessa chiave temporanea (qui: ' + key + '),'],
+    ['serve solo per collegare le righe alla loro testata durante la creazione di un documento NUOVO.'],
+    ['Non e' + "'" + ' il numero documento reale: lo assegna SAP B1 dopo l-import.'],
+    ['"BinEntry" e' + "'" + ' lasciato vuoto: se il tuo magazzino e' + "'" + ' gestito a ubicazioni, va mappato al numero interno (AbsEntry) della ubicazione, non al codice testuale.'],
+    ['"UoMCode" e' + "'" + ' lasciato come registrato in app: lascialo vuoto se conti nella unita di misura base articolo.'],
+    ['Verifica sempre i campi obbligatori nel tuo DTW (es. CountDate, Series) e testa il primo import su un documento di prova.']
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guide), 'Guida_Import_DTW');
+
+  const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  downloadBlob(new Blob([wbout], {type:'application/octet-stream'}), 'DTW_Conteggio_' + sanitizeFilename(s.name) + '_' + s.date + '.xlsx');
+  toast('File per DTW generato');
+}
+function exportCsv(){
+  const s = getSelectedSession();
+  if(!s){ toast('Seleziona una sessione'); return; }
+  if(!s.lines.length){ toast('La sessione non ha righe da esportare'); return; }
+  const rows = buildExportRows(s);
+  const csv = rows.map(r => r.map(v => {
+    const str = String(v ?? '');
+    return /[;"\n]/.test(str) ? '"' + str.replace(/"/g,'""') + '"' : str;
+  }).join(';')).join('\r\n');
+  downloadBlob(new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8;'}), 'Conteggio_' + sanitizeFilename(s.name) + '_' + s.date + '.csv');
+  toast('File CSV generato');
+}
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
+/* ---------- Barcode scanning ---------- */
+let scanStream = null, scanning = false, detector = null;
+async function openScan(){
+  if(!('BarcodeDetector' in window)){
+    toast('Il browser non supporta la scansione automatica: inserisci il codice manualmente');
+    return;
+  }
+  try{
+    detector = new BarcodeDetector({formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e','qr_code','itf']});
+    scanStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video = document.getElementById('scanVideo');
+    video.srcObject = scanStream;
+    document.getElementById('scanModal').classList.add('open');
+    await video.play();
+    scanning = true;
+    requestAnimationFrame(scanLoop);
+  }catch(err){
+    console.error(err);
+    toast('Impossibile accedere alla fotocamera. Controlla i permessi.');
+  }
+}
+async function scanLoop(){
+  if(!scanning) return;
+  const video = document.getElementById('scanVideo');
+  try{
+    const codes = await detector.detect(video);
+    if(codes && codes.length){
+      const value = codes[0].rawValue;
+      stopScan();
+      document.getElementById('codeInput').value = value;
+      const r = findInCatalog(value);
+      if(r){ fillFromCatalog(r); toast('Trovato: ' + r.name); }
+      else { toast('Codice ' + value + ' non in catalogo, compila la descrizione'); }
+      document.getElementById('qtyInput').focus();
+      return;
+    }
+  }catch(e){ /* nessun codice in questo frame */ }
+  requestAnimationFrame(scanLoop);
+}
+function stopScan(){
+  scanning = false;
+  if(scanStream){ scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  document.getElementById('scanModal').classList.remove('open');
+}
+
+/* ---------- Init ---------- */
+renderSessionBar();
+renderActiveSession();
+renderExportSelect();
+</script>
+</body>
+</html>
