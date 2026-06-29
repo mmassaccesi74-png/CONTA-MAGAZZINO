@@ -266,7 +266,7 @@
   <!-- CATALOGO -->
   <section class="panel" id="panel-catalogo">
     <h2 class="section-title">Catalogo articoli</h2>
-    <p class="hint">Importa un file Excel/CSV con l'elenco articoli (es. esportato da SAP B1) per ritrovare automaticamente descrizione, UM e magazzino quando scansioni un codice. Colonne riconosciute: Codice/ItemCode, Descrizione/ItemName, UM/UoM, Magazzino/WhsCode, Ubicazione/BinCode.</p>
+    <p class="hint">Importa un file Excel/CSV con l'elenco articoli (es. esportato da SAP B1) per ritrovare automaticamente descrizione, UM e magazzino quando scansioni un codice. Colonne riconosciute: Codice/ItemCode, Descrizione/ItemName, UM/UoM, Magazzino/WhsCode, Ubicazione/BinCode, Codice a Barre/BarCode. Se presente la colonna codice a barre, la scansione riconosce anche EAN diversi dal codice articolo SAP.</p>
     <div class="card">
       <input type="file" id="catalogFile" accept=".xlsx,.xls,.csv" style="margin-bottom:10px;">
       <button class="btn btn-primary" onclick="importCatalog()">Importa file</button>
@@ -383,7 +383,8 @@ const HEADER_MAP = {
   name: ['itemname','itemdescription','descrizione','description','nomearticolo','nome','desc'],
   uom:  ['uom','um','unitamisura','unit','unitofmeasure','inventoryuom'],
   whs:  ['whscode','warehouse','warehousecode','magazzino','whs','codmagazzino'],
-  bin:  ['bincode','bin','binlocation','ubicazione','location','codubicazione','binlocationcode']
+  bin:  ['bincode','bin','binlocation','ubicazione','location','codubicazione','binlocationcode'],
+  barcode: ['barcode','codiceabarre','codicebarre','codbarre','ean','eancode','bcdcode','codicebarre']
 };
 function normHeader(h){ return String(h).toLowerCase().replace(/[^a-z0-9]/g,''); }
 function mapRow(row){
@@ -400,7 +401,8 @@ function mapRow(row){
     name: String(find('name')).trim(),
     uom:  String(find('uom')).trim(),
     whs:  String(find('whs')).trim(),
-    bin:  String(find('bin')).trim()
+    bin:  String(find('bin')).trim(),
+    barcode: String(find('barcode')).trim()
   };
 }
 
@@ -490,8 +492,11 @@ function renderActiveSession(){
 }
 
 /* ---------- Add / edit lines ---------- */
-function findInCatalog(code){
-  return catalog.find(r => r.code.toLowerCase() === String(code).trim().toLowerCase());
+function findInCatalog(value){
+  const v = String(value).trim().toLowerCase();
+  if(!v) return null;
+  return catalog.find(r => r.code.toLowerCase() === v)
+      || catalog.find(r => r.barcode && r.barcode.toLowerCase() === v);
 }
 
 document.getElementById('codeInput').addEventListener('input', (e) => {
@@ -499,11 +504,12 @@ document.getElementById('codeInput').addEventListener('input', (e) => {
   const box = document.getElementById('suggestions');
   if(!q || !catalog.length){ box.style.display='none'; return; }
   const matches = catalog.filter(r =>
-    r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
+    r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q) ||
+    (r.barcode && r.barcode.toLowerCase().includes(q))
   ).slice(0,8);
   if(!matches.length){ box.style.display='none'; return; }
   box.innerHTML = matches.map(r =>
-    `<div onclick='pickSuggestion("${r.code.replace(/"/g,'&quot;')}")'><span class="code">${escapeHtml(r.code)}</span> — ${escapeHtml(r.name)}</div>`
+    `<div onclick='pickSuggestion("${r.code.replace(/"/g,'&quot;')}")'><span class="code">${escapeHtml(r.code)}</span> — ${escapeHtml(r.name)}${r.barcode ? ' <span style="color:var(--text-dim);">· '+escapeHtml(r.barcode)+'</span>' : ''}</div>`
   ).join('');
   box.style.display = 'block';
 });
@@ -831,10 +837,14 @@ async function scanLoop(){
     if(codes && codes.length){
       const value = codes[0].rawValue;
       stopScan();
-      document.getElementById('codeInput').value = value;
       const r = findInCatalog(value);
-      if(r){ fillFromCatalog(r); toast('Trovato: ' + r.name); }
-      else { toast('Codice ' + value + ' non in catalogo, compila la descrizione'); }
+      if(r){
+        fillFromCatalog(r);
+        toast('Trovato: ' + r.name);
+      }else{
+        document.getElementById('codeInput').value = value;
+        toast('Codice ' + value + ' non in catalogo, compila la descrizione');
+      }
       document.getElementById('qtyInput').focus();
       return;
     }
