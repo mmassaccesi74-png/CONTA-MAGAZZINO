@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Conta Magazzino</title>
+<style>
+/* Strumento da magazzino a una colonna: magazzino in alto, lettura al centro, schede in basso.
+   Codici in monospazio come sulle etichette; arancio "alta visibilita'" solo per le azioni principali. */
+:root{
+  --bg:#f3f4f1; --surface:#ffffff; --ink:#1d2321; --muted:#5d6763; --line:#d7dbd6;
+  --accent:#d9480f; --accent-ink:#ffffff; --ok:#2b7a3d; --warn:#b26a00; --bad:#b3261e; --chip:#e8ebe6;
+  --f-ui:Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-code:"Roboto Mono","Droid Sans Mono",ui-monospace,monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#141816; --surface:#1d2321; --ink:#e9ece8; --muted:#9aa49f; --line:#323a37;
+  --accent:#ff7a3d; --accent-ink:#1a0d05; --ok:#6cc985; --warn:#f0b04a; --bad:#ff8a80; --chip:#2a312e; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:16px;line-height:1.4;
+  padding-top:env(safe-area-inset-top,0px);-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+.app{display:flex;flex-direction:column;min-height:100vh;max-width:720px;margin:0 auto}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);padding-block:10px}
+.top-row{display:flex;gap:10px;align-items:center}
+.brand{font-weight:700;font-size:15px;margin-right:auto}
+.sess{font-size:13px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+label.f{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+select,input[type=text],input[type=number],input[type=search]{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0;width:100%}
+select:focus,input:focus,button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:1px}
+.mag{display:grid;gap:4px;margin-top:8px}
+main{flex:1;padding-block:14px 100px;display:flex;flex-direction:column;gap:14px}
+.banner{border-radius:var(--r);padding:10px 12px;font-size:14px;background:var(--chip)}
+.banner.warn{background:color-mix(in srgb,var(--warn) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent)}
+.scan{display:flex;gap:8px}
+.scan input{font-family:var(--f-code);font-size:20px;padding:14px 12px}
+.scan input::placeholder{font-family:var(--f-ui);font-size:16px;color:var(--muted)}
+button{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;min-height:46px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.big{min-height:58px;font-size:18px;width:100%}
+button:disabled{opacity:.45}
+.cam-btn{display:flex;align-items:center;justify-content:center;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 auto;min-width:0}
+.mode{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:13px;padding:6px 10px;border-radius:999px;background:var(--chip);min-height:auto}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.last{display:grid;gap:10px}
+.code{font-family:var(--f-code);font-weight:600;font-size:18px;overflow-wrap:anywhere}
+.meta{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.tag{font-family:var(--f-code);font-size:12px;padding:2px 7px;border-radius:5px;background:var(--chip);color:var(--ink)}
+.tag.warn{background:color-mix(in srgb,var(--warn) 22%,var(--surface))}
+.qty{display:grid;grid-template-columns:60px 1fr 60px;gap:8px}
+.qty input{text-align:center;font-family:var(--f-code);font-size:26px;font-weight:600;padding:8px}
+.qty button{font-size:26px;padding:0}
+.total{font-variant-numeric:tabular-nums;font-size:14px;color:var(--muted)}
+.total b{color:var(--ink);font-size:16px}
+.list{display:flex;flex-direction:column}
+.item{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.item .c{font-family:var(--f-code);font-weight:600;font-size:15px;min-width:0;overflow-wrap:anywhere}
+.item .d{grid-column:1;font-size:14px;color:var(--muted);min-width:0}
+.item .q{grid-row:1/3;grid-column:2;display:flex;align-items:center;gap:6px}
+.item .q input{width:84px;text-align:right;font-family:var(--f-code);padding:8px}
+.item .q button{min-height:42px;padding:6px 12px}
+h2{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 0}
+.empty{padding:22px 4px;color:var(--muted);text-align:center;font-size:15px}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px}
+.stat .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat .l{font-size:12px;color:var(--muted)}
+.small{font-size:13px;color:var(--muted)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr)}
+nav.tabs button{border:0;border-radius:0;background:transparent;min-height:60px;font-size:15px;color:var(--muted);border-top:3px solid transparent}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-top-color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);
+  padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:30;max-width:calc(100% - 32px);text-align:center}
+.flash-ok{animation:fo .5s}.flash-bad{animation:fb .6s}
+@keyframes fo{from{box-shadow:0 0 0 4px var(--ok)}to{box-shadow:0 0 0 0 transparent}}
+@keyframes fb{from{box-shadow:0 0 0 4px var(--bad)}to{box-shadow:0 0 0 0 transparent}}
+
+/* ---- lettura con fotocamera: la fotocamera e' disegnata DIETRO la pagina, che diventa trasparente ---- */
+body.barcode-scanner-active{background:transparent!important}
+body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:none!important}
+#scanner{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
+.sc-top,.sc-bottom{background:rgba(10,12,11,.72);color:#fff;border-radius:14px;padding:12px 14px}
+.sc-top .code{color:#fff;font-size:17px}
+.sc-top .d{font-size:14px;color:#d4d8d5}
+.sc-top .cnt{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.mirino{align-self:center;width:min(80vw,360px);aspect-ratio:1.8;border:3px solid rgba(255,255,255,.9);border-radius:16px;
+  box-shadow:0 0 0 2000px rgba(0,0,0,.18)}
+.mirino.ok{border-color:#6cc985}.mirino.bad{border-color:#ff8a80}
+.sc-bottom{display:flex;gap:10px}
+.sc-bottom button{flex:1;min-height:56px;font-size:17px;border:0}
+.sc-bottom .stop{background:#fff;color:#111}
+.sc-bottom .luce{background:rgba(255,255,255,.18);color:#fff;flex:0 0 auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top wrap">
+    <div class="top-row">
+      <span class="brand">Conta Magazzino</span>
+      <span class="sess" id="sessLabel">Nessuna sessione</span>
+    </div>
+    <div class="mag">
+      <label class="f" for="magSel">Magazzino</label>
+      <select id="magSel"></select>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="banners"></div>
+
+    <section id="tab-conta" class="tabp">
+      <button id="camBtn" class="primary big cam-btn" type="button">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16 8v8"/></svg>
+        Leggi con la fotocamera</button>
+      <div class="scan" style="margin-top:10px">
+        <input id="scanIn" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
+               placeholder="Lettore laser o scrivi il codice" enterkeyhint="go" aria-label="Codice a barre o codice articolo">
+      </div>
+      <div class="mode" style="margin-top:10px">
+        <button class="chip" id="modoUno" aria-pressed="true" type="button">Ogni lettura = 1 pezzo</button>
+        <button class="chip" id="modoQta" aria-pressed="false" type="button">Chiedi quantità</button>
+      </div>
+      <div id="lastBox" class="card last" style="margin-top:14px"></div>
+      <h2 style="margin-top:6px">Ultime letture in questo magazzino</h2>
+      <div class="card"><div id="recent" class="list"></div></div>
+    </section>
+
+    <section id="tab-elenco" class="tabp" hidden>
+      <div class="stats" id="stats"></div>
+      <h2>Righe in questo magazzino</h2>
+      <div class="card"><input id="filtro" type="search" placeholder="Filtra per codice o descrizione" aria-label="Filtra">
+        <div id="righe" class="list" style="margin-top:6px"></div></div>
+      <h2>Invia il conteggio</h2>
+      <div class="card" style="display:grid;gap:10px">
+        <p class="small" style="margin:0">Invia il file con tutte le righe di questa sessione (tutti i magazzini) a chi lo apre nel programma Etichette SAP, scheda Inventario: WhatsApp, email o Drive.</p>
+        <button id="exportBtn" class="primary big" type="button">Invia file per SAP</button>
+      </div>
+    </section>
+
+    <section id="tab-imp" class="tabp" hidden>
+      <h2>Operatore</h2>
+      <div class="card" style="display:grid;gap:8px">
+        <label class="f" for="nomeOp">Il tuo nome (compare nel file)</label>
+        <input id="nomeOp" type="text" placeholder="Es. Mario" autocomplete="name">
+      </div>
+      <h2>Sessione di conteggio</h2>
+      <div class="card" style="display:grid;gap:10px">
+        <label class="f" for="sessSel">Sessione attiva</label>
+        <select id="sessSel"></select>
+        <div class="row"><input id="nuovaSess" type="text" class="grow" placeholder="Nome nuova sessione"><button id="creaSess" type="button">Crea</button></div>
+        <p class="small" style="margin:0">Usa una sessione nuova per ogni inventario. Le letture restano su questo telefono finché non svuoti la sessione.</p>
+        <div class="row" id="eliminaBox" hidden><button id="eliminaSess" type="button">Svuota questa sessione</button>
+          <button id="eliminaConf" type="button" hidden style="border-color:var(--bad);color:var(--bad)">Conferma: elimina tutte le righe</button></div>
+      </div>
+      <h2>Anagrafica articoli</h2>
+      <div class="card" style="display:grid;gap:10px">
+        <div id="anaInfo" class="small"></div>
+        <p class="small" style="margin:0">Nel programma Etichette SAP: scheda Inventario &gt; <b>Crea file anagrafica</b>. Manda il file al telefono (WhatsApp, email, Drive), scaricalo e sceglilo qui.</p>
+        <input id="anaFile" type="file" accept="*/*">
+      </div>
+      <h2>Lettura</h2>
+      <div class="card" style="display:grid;gap:10px">
+        <label class="row" style="gap:10px"><input id="optLaser" type="checkbox" style="width:22px;height:22px"> <span>Palmare con lettore laser (non aprire la tastiera)</span></label>
+        <label class="row" style="gap:10px"><input id="optSuono" type="checkbox" checked style="width:22px;height:22px"> <span>Suono e vibrazione a ogni lettura</span></label>
+      </div>
+      <p class="small" id="versione"></p>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Sezioni"><div class="in" role="tablist">
+    <button role="tab" data-tab="conta" aria-selected="true">Conta</button>
+    <button role="tab" data-tab="elenco" aria-selected="false">Elenco</button>
+    <button role="tab" data-tab="imp" aria-selected="false">Impostazioni</button>
+  </div></nav>
+</div>
+
+<div id="scanner" hidden>
+  <div class="sc-top" id="scTop"><div class="small" style="color:#d4d8d5">Inquadra il codice a barre</div></div>
+  <div class="mirino" id="mirino"></div>
+  <div class="sc-bottom">
+    <button class="luce" id="luceBtn" type="button" aria-label="Accendi o spegni la torcia">Torcia</button>
+    <button class="stop" id="stopBtn" type="button">Fine</button>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+"use strict";
+const CAP = window.Capacitor;
+const NATIVO = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
+const P = (CAP && CAP.Plugins) || {};
+
+const S = {
+  sessioni:[], sid:null, mag:"", ana:null, fogli:{}, ultimo:null,
+  modoUno:true, laser:false, suono:true, nome:"", scansione:false, torcia:false, ultimaLettura:{v:"", t:0}
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => (Math.round(n * 1000) / 1000).toLocaleString("it-IT");
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem("cm:" + k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem("cm:" + k, JSON.stringify(v)); return true; }catch{ toast("Memoria del telefono piena: invia e svuota una sessione"); return false; } }
+};
+const IDB = {
+  _p:null,
+  open(){ return this._p || (this._p = new Promise((ok, ko) => { const r = indexedDB.open("conta-magazzino", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); })); },
+  async get(k){ try{ const db = await this.open(); return await new Promise(ok => { const t = db.transaction("kv").objectStore("kv").get(k);
+    t.onsuccess = () => ok(t.result); t.onerror = () => ok(undefined); }); }catch{ return undefined; } },
+  async set(k, v){ const db = await this.open(); await new Promise((ok, ko) => { const t = db.transaction("kv", "readwrite");
+    t.objectStore("kv").put(v, k); t.oncomplete = ok; t.onerror = () => ko(t.error); }); }
+};
+
+/* ------------------------------------------------------------ segnali */
+let toastT;
+function toast(msg){ const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200); }
+let audio;
+function beep(ok){
+  if (!S.suono) return;
+  try{ audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = ok ? 1320 : 330; o.type = ok ? "sine" : "square";
+    g.gain.setValueAtTime(.15, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + (ok ? .09 : .25));
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? .1 : .26)); }catch{}
+  try{ navigator.vibrate && navigator.vibrate(ok ? 35 : [70, 50, 70]); }catch{}
+}
+function banners(){
+  const b = [];
+  if (!S.ana) b.push(`<div class="banner">Anagrafica non caricata: i codici vengono salvati lo stesso e verificati in SAP. Caricala da <b>Impostazioni</b> per vedere le descrizioni.</div>`);
+  if (!S.sid) b.push(`<div class="banner warn">Crea una sessione di conteggio in <b>Impostazioni</b> per iniziare.</div>`);
+  if (!S.nome) b.push(`<div class="banner">Scrivi il tuo nome in <b>Impostazioni</b>: comparirà nel file del conteggio.</div>`);
+  $("banners").innerHTML = b.join("");
+}
+
+/* ------------------------------------------------------------ anagrafica */
+function cerca(codice){
+  const a = S.ana; if (!a || !codice) return null;
+  const b = a.barcode[codice];
+  if (b){ const art = a.articoli[b[0]] || ["", ""]; return {barcode:codice, codice:b[0], desc:art[0], um:b[1] || art[1], umMag:art[1]}; }
+  const up = codice.toUpperCase(), k = a.articoli[codice] ? codice : (a.articoli[up] ? up : null);
+  if (k){ const art = a.articoli[k]; return {barcode:"", codice:k, desc:art[0], um:art[1], umMag:art[1]}; }
+  return null;
+}
+function popolaMagazzini(){
+  const sel = $("magSel"), mags = (S.ana && S.ana.magazzini) || [];
+  const presenti = new Set(mags.map(m => m[0]));
+  const opts = mags.map(([c, n]) => `<option value="${esc(c)}">${esc(c)}${n ? " · " + esc(n) : ""}</option>`);
+  for (const m of Object.keys(S.fogli)) if (!presenti.has(m)){ presenti.add(m); opts.push(`<option value="${esc(m)}">${esc(m)}</option>`); }
+  if (!presenti.size) opts.push(`<option value="01">01</option>`);
+  opts.push(`<option value="__altro">Altro magazzino…</option>`);
+  sel.innerHTML = opts.join("");
+  const salvato = LS.get("mag", "");
+  sel.value = [...sel.options].some(o => o.value === salvato) ? salvato : sel.options[0].value;
+  S.mag = sel.value;
+}
+function renderAna(){
+  const a = S.ana;
+  $("anaInfo").innerHTML = a
+    ? `<b>${Object.keys(a.articoli).length.toLocaleString("it-IT")}</b> articoli, <b>${Object.keys(a.barcode).length.toLocaleString("it-IT")}</b> codici a barre, ${(a.magazzini || []).length} magazzini${a.azienda ? " · " + esc(a.azienda) : ""}${a.creato ? " · creata il " + new Date(a.creato).toLocaleString("it-IT", {dateStyle:"short", timeStyle:"short"}) : ""}.`
+    : "Nessuna anagrafica caricata.";
+}
+
+/* ------------------------------------------------------------ righe contate (sul telefono) */
+function chiaveRiga(r){ return r.barcode ? "b:" + r.barcode : "c:" + r.codice; }
+function foglio(mag){ return S.fogli[mag] || (S.fogli[mag] = {}); }
+function salvaFogli(){ if (S.sid) LS.set("fogli:" + S.sid, S.fogli); }
+
+function registra(r, testo, qta, sostituisci){
+  if (!S.sid){ toast("Crea prima una sessione (Impostazioni)"); return false; }
+  r = r || {barcode:testo, codice:"", desc:"", um:"", umMag:""};
+  const f = foglio(S.mag), k = chiaveRiga(r);
+  const riga = f[k] || {b:r.barcode, c:r.codice, u:r.um, d:r.desc, q:0};
+  riga.q = Math.max(0, sostituisci ? qta : (riga.q || 0) + qta);
+  riga.t = new Date().toISOString();
+  if (riga.q === 0 && sostituisci) delete f[k]; else f[k] = riga;
+  S.ultimo = {k, r, mag:S.mag};
+  salvaFogli(); render();
+  return true;
+}
+function gestisciCodice(testo, daFotocamera){
+  testo = (testo || "").trim(); if (!testo) return;
+  const t = cerca(testo), riconosciuto = !!t || !S.ana;
+  beep(riconosciuto); flash(riconosciuto);
+  if (S.modoUno){
+    if (registra(t, testo, 1, false) && !daFotocamera) toast((t ? t.codice : testo) + "  +1");
+  } else {
+    S.ultimo = {k:chiaveRiga(t || {barcode:testo}), r:t || {barcode:testo, codice:"", desc:"", um:""}, mag:S.mag, nuovo:true};
+    if (daFotocamera) fermaScansione();
+    render(); setTimeout(() => { const q = $("qIn"); q && (q.focus(), q.select()); }, 60);
+  }
+  if (daFotocamera) renderScanner(riconosciuto);
+}
+function flash(ok){ const b = $("lastBox"); b.classList.remove("flash-ok", "flash-bad"); void b.offsetWidth; b.classList.add(ok ? "flash-ok" : "flash-bad"); }
+
+/* ------------------------------------------------------------ fotocamera (ML Kit) */
+let ascoltatore = null;
+async function avviaScansione(){
+  if (!NATIVO || !P.BarcodeScanner){ toast("La fotocamera funziona nell'app installata sul telefono"); return; }
+  if (!S.sid){ toast("Crea prima una sessione (Impostazioni)"); return; }
+  try{
+    let perm = await P.BarcodeScanner.checkPermissions();
+    if (perm.camera !== "granted") perm = await P.BarcodeScanner.requestPermissions();
+    if (perm.camera !== "granted"){ toast("Serve il permesso della fotocamera: abilitalo nelle impostazioni del telefono"); return; }
+    document.body.classList.add("barcode-scanner-active"); $("scanner").hidden = false; S.scansione = true; S.torcia = false;
+    renderScanner(null);
+    ascoltatore = await P.BarcodeScanner.addListener("barcodesScanned", ev => {
+      const b = ev && ev.barcodes && ev.barcodes[0]; if (!b || !b.rawValue) return;
+      const ora = Date.now();
+      if (b.rawValue === S.ultimaLettura.v && ora - S.ultimaLettura.t < 1800) return;   // stesso codice ancora inquadrato
+      S.ultimaLettura = {v:b.rawValue, t:ora};
+      gestisciCodice(b.rawValue, true);
+    });
+    await P.BarcodeScanner.startScan({formats:["EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128", "CODE_39", "CODE_93", "ITF", "CODABAR", "QR_CODE", "DATA_MATRIX"]});
+  }catch(e){ await fermaScansione(); toast("Fotocamera non disponibile: " + (e && e.message ? e.message : "errore")); }
+}
+async function fermaScansione(){
+  S.scansione = false;
+  document.body.classList.remove("barcode-scanner-active"); $("scanner").hidden = true;
+  try{ if (ascoltatore){ await ascoltatore.remove(); ascoltatore = null; } }catch{}
+  try{ await P.BarcodeScanner.stopScan(); }catch{}
+  render();
+}
+function renderScanner(ok){
+  const m = $("mirino"); m.classList.remove("ok", "bad"); if (ok !== null){ m.classList.add(ok ? "ok" : "bad"); setTimeout(() => m.classList.remove("ok", "bad"), 500); }
+  const u = S.ultimo;
+  if (!u || u.mag !== S.mag){ $("scTop").innerHTML = `<div class="small" style="color:#d4d8d5">Magazzino ${esc(S.mag)} · inquadra il codice a barre</div>`; return; }
+  const riga = foglio(S.mag)[u.k], r = u.r;
+  $("scTop").innerHTML = `<div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap">
+      <div style="min-width:0"><div class="code">${esc(r.codice || r.barcode)}${r.um ? ` <span class="tag">${esc(r.um)}</span>` : ""}</div>
+      <div class="d">${r.codice ? esc(r.desc) : "Non in anagrafica: verrà verificato in SAP"}</div></div>
+      <div class="cnt">${fmt(riga ? riga.q : 0)}</div></div>`;
+}
+
+/* ------------------------------------------------------------ rendering */
+function render(){ renderSessione(); renderConta(); renderElenco(); banners(); }
+function renderSessione(){
+  const s = S.sessioni.find(x => x.id === S.sid);
+  $("sessLabel").textContent = s ? s.nome : "Nessuna sessione";
+  $("sessSel").innerHTML = S.sessioni.length ? S.sessioni.map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join("") : `<option value="">Nessuna sessione</option>`;
+  $("sessSel").value = S.sid || "";
+  $("eliminaBox").hidden = !S.sid;
+}
+function rigaHtml(k, x, editabile){
+  const titolo = x.c || x.b, sotto = x.c ? (x.d || "") : "Non in anagrafica";
+  return `<div class="item"><div class="c">${esc(titolo)}${x.u ? ` <span class="tag">${esc(x.u)}</span>` : ""}</div>
+    <div class="d">${esc(sotto)}${x.c && x.b ? ` · <span style="font-family:var(--f-code)">${esc(x.b)}</span>` : ""}</div>
+    <div class="q">${editabile
+      ? `<input type="number" inputmode="decimal" min="0" step="any" value="${x.q}" data-k="${esc(k)}" aria-label="Quantità ${esc(titolo)}"><button type="button" data-del="${esc(k)}" aria-label="Elimina ${esc(titolo)}">✕</button>`
+      : `<b style="font-variant-numeric:tabular-nums;font-size:18px">${fmt(x.q)}</b>`}</div></div>`;
+}
+function renderConta(){
+  const u = S.ultimo, box = $("lastBox");
+  if (!u || u.mag !== S.mag){
+    box.innerHTML = `<div class="empty">Tocca <b>Leggi con la fotocamera</b>, usa il lettore laser o scrivi il codice nel campo.</div>`;
+  } else {
+    const riga = foglio(S.mag)[u.k], r = u.r, tot = riga ? riga.q : 0;
+    box.innerHTML = `
+      <div><div class="code">${esc(r.codice || r.barcode)}</div>
+        <div>${r.codice ? esc(r.desc) : `<span style="color:var(--warn)">${S.ana ? "Codice non presente in anagrafica" : "Anagrafica non caricata"}: verrà verificato in SAP.</span>`}</div></div>
+      <div class="meta">${r.barcode ? `<span class="tag">${esc(r.barcode)}</span>` : ""}${r.um ? `<span class="tag ${r.umMag && r.um !== r.umMag ? "warn" : ""}">UM ${esc(r.um)}</span>` : ""}${r.um && r.umMag && r.um !== r.umMag ? `<span>conversione in ${esc(r.umMag)} fatta in SAP</span>` : ""}</div>
+      <div class="qty">
+        <button type="button" id="qMeno" aria-label="Togli uno">−</button>
+        <input id="qIn" type="number" inputmode="decimal" min="0" step="any" value="${u.nuovo && !riga ? "" : tot}" aria-label="Quantità contata">
+        <button type="button" id="qPiu" aria-label="Aggiungi uno">+</button>
+      </div>
+      <div class="row"><span class="total grow">Totale contato: <b>${fmt(tot)}</b>${r.um ? " " + esc(r.um) : ""}</span>
+        <button type="button" id="qOk" class="primary">Salva quantità</button></div>`;
+    const base = r.codice ? r : null, testo = r.barcode || r.codice;
+    $("qMeno").onclick = () => registra(base, testo, -1, false);
+    $("qPiu").onclick = () => registra(base, testo, 1, false);
+    const conferma = () => { const v = parseFloat(String($("qIn").value).replace(",", ".")); if (isNaN(v) || v < 0){ toast("Quantità non valida"); return; }
+      S.ultimo.nuovo = false; registra(base, testo, v, true); toast("Salvato: " + fmt(v)); focusScan(); };
+    $("qOk").onclick = conferma;
+    $("qIn").onkeydown = e => { if (e.key === "Enter"){ e.preventDefault(); conferma(); } };
+  }
+  const ultime = Object.entries(foglio(S.mag)).sort((a, b) => (b[1].t || "").localeCompare(a[1].t || "")).slice(0, 8);
+  $("recent").innerHTML = ultime.length ? ultime.map(([k, x]) => rigaHtml(k, x, false)).join("") : `<div class="empty">Ancora nessuna lettura nel magazzino ${esc(S.mag)}.</div>`;
+}
+function renderElenco(){
+  const filtro = ($("filtro").value || "").trim().toLowerCase();
+  const mie = Object.entries(foglio(S.mag)).filter(([, x]) => !filtro || (x.c + " " + x.b + " " + (x.d || "")).toLowerCase().includes(filtro))
+    .sort((a, b) => (a[1].c || a[1].b).localeCompare(b[1].c || b[1].b));
+  $("righe").innerHTML = mie.length ? mie.map(([k, x]) => rigaHtml(k, x, true)).join("") : `<div class="empty">${filtro ? "Nessuna riga corrisponde al filtro." : "Nessuna riga in questo magazzino."}</div>`;
+  let righe = 0, pezzi = 0, ignoti = 0; const art = new Set(), mags = new Set();
+  for (const [mag, f] of Object.entries(S.fogli)) for (const x of Object.values(f)){ righe++; pezzi += x.q || 0; mags.add(mag); x.c ? art.add(mag + "|" + x.c) : ignoti++; }
+  $("stats").innerHTML = [[art.size, "articoli contati"], [fmt(pezzi), "quantità totale"], [mags.size, "magazzini"], [ignoti, "codici da verificare"]]
+    .map(([n, l]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  $("exportBtn").disabled = !righe;
+}
+
+/* ------------------------------------------------------------ sessioni */
+function scegliSessione(id){
+  S.sid = id || null; LS.set("sessione", S.sid);
+  S.fogli = S.sid ? LS.get("fogli:" + S.sid, {}) : {}; S.ultimo = null;
+  popolaMagazzini(); render();
+}
+function creaSessione(){
+  const nome = ($("nuovaSess").value || "").trim() || ("Inventario " + new Date().toLocaleDateString("it-IT"));
+  const id = "s" + Date.now().toString(36);
+  S.sessioni.unshift({id, nome, creata:new Date().toISOString()}); LS.set("sessioni", S.sessioni);
+  $("nuovaSess").value = ""; scegliSessione(id); toast("Sessione creata: " + nome); vai("conta");
+}
+function svuotaSessione(){
+  const id = S.sid; if (!id) return;
+  try{ localStorage.removeItem("cm:fogli:" + id); }catch{}
+  S.sessioni = S.sessioni.filter(x => x.id !== id); LS.set("sessioni", S.sessioni);
+  scegliSessione(S.sessioni[0] && S.sessioni[0].id); toast("Sessione eliminata");
+}
+
+/* ------------------------------------------------------------ invio del file */
+async function esporta(){
+  const s = S.sessioni.find(x => x.id === S.sid);
+  const righe = [];
+  for (const [mag, f] of Object.entries(S.fogli)) for (const x of Object.values(f)) if (x.q > 0)
+    righe.push({magazzino:mag, codice:x.c || "", barcode:x.b || "", um:x.u || "", quantita:x.q, operatore:S.nome || "Telefono"});
+  const dati = {formato:"conteggio-inventario-1", sessione:s ? s.nome : "", operatore:S.nome || "", esportato:new Date().toISOString(), righe};
+  const testo = JSON.stringify(dati, null, 1);
+  const pulito = t => (t || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+  const nome = `conteggio_${pulito(s && s.nome) || "inventario"}_${pulito(S.nome) || "telefono"}.json`;
+  if (NATIVO && P.Filesystem && P.Share){
+    try{
+      const w = await P.Filesystem.writeFile({path:nome, data:testo, directory:"CACHE", encoding:"utf8"});
+      await P.Share.share({title:"Conteggio inventario", text:`Conteggio "${dati.sessione}" di ${S.nome || "telefono"}: ${righe.length} righe`, files:[w.uri], dialogTitle:"Invia il conteggio"});
+    }catch(e){ if (!/cancel/i.test(String(e && e.message))) toast("Invio non riuscito: " + (e && e.message ? e.message : "errore")); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([testo], {type:"application/json"})); a.download = nome; a.click();
+}
+
+/* ------------------------------------------------------------ eventi */
+function vai(tab){
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll(".tabp").forEach(p => p.hidden = p.id !== "tab-" + tab);
+  if (tab === "conta") focusScan();
+}
+function focusScan(){ if (S.laser && !$("tab-conta").hidden) $("scanIn").focus({preventScroll:true}); }
+function applicaLaser(){ $("scanIn").setAttribute("inputmode", S.laser ? "none" : "text"); }
+
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => vai(b.dataset.tab));
+$("scanIn").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Tab"){ e.preventDefault(); const v = e.target.value; e.target.value = ""; gestisciCodice(v, false); } });
+$("camBtn").onclick = avviaScansione;
+$("stopBtn").onclick = fermaScansione;
+$("luceBtn").onclick = async () => { try{ await P.BarcodeScanner.toggleTorch(); S.torcia = !S.torcia; $("luceBtn").textContent = S.torcia ? "Spegni" : "Torcia"; }catch{ toast("Torcia non disponibile"); } };
+$("modoUno").onclick = () => { S.modoUno = true; LS.set("modoUno", true); $("modoUno").setAttribute("aria-pressed", "true"); $("modoQta").setAttribute("aria-pressed", "false"); };
+$("modoQta").onclick = () => { S.modoUno = false; LS.set("modoUno", false); $("modoUno").setAttribute("aria-pressed", "false"); $("modoQta").setAttribute("aria-pressed", "true"); };
+$("optLaser").onchange = e => { S.laser = e.target.checked; LS.set("laser", S.laser); applicaLaser(); };
+$("optSuono").onchange = e => { S.suono = e.target.checked; LS.set("suono", S.suono); };
+$("nomeOp").onchange = e => { S.nome = e.target.value.trim(); LS.set("nome", S.nome); banners(); };
+$("magSel").onchange = e => {
+  if (e.target.value === "__altro"){ e.target.hidden = true;
+    const box = document.createElement("div"); box.className = "row";
+    box.innerHTML = `<input id="magAltro" type="text" class="grow" placeholder="Codice magazzino SAP" autocapitalize="characters"><button type="button" id="magOk">OK</button>`;
+    e.target.after(box); $("magAltro").focus();
+    const fine = () => { const c = $("magAltro").value.trim(); box.remove(); e.target.hidden = false;
+      if (c){ const o = document.createElement("option"); o.value = c; o.textContent = c; e.target.insertBefore(o, e.target.lastElementChild); e.target.value = c; S.mag = c; LS.set("mag", c); }
+      else e.target.value = S.mag; render(); };
+    $("magOk").onclick = fine; $("magAltro").onkeydown = k => { if (k.key === "Enter") fine(); }; return; }
+  S.mag = e.target.value; LS.set("mag", S.mag); S.ultimo = null; render(); focusScan();
+};
+$("righe").addEventListener("change", e => { const k = e.target.dataset.k; if (!k) return;
+  const v = parseFloat(String(e.target.value).replace(",", ".")), f = foglio(S.mag), r = f[k]; if (!r) return;
+  if (isNaN(v) || v < 0){ e.target.value = r.q; toast("Quantità non valida"); return; }
+  r.q = v; r.t = new Date().toISOString(); if (v === 0) delete f[k]; salvaFogli(); render(); });
+$("righe").addEventListener("click", e => { const k = e.target.dataset && e.target.dataset.del; if (!k) return;
+  delete foglio(S.mag)[k]; salvaFogli(); render(); toast("Riga eliminata"); });
+$("filtro").oninput = renderElenco;
+$("exportBtn").onclick = esporta;
+$("sessSel").onchange = e => scegliSessione(e.target.value);
+$("creaSess").onclick = creaSessione;
+$("eliminaSess").onclick = () => { $("eliminaConf").hidden = false; };
+$("eliminaConf").onclick = () => { $("eliminaConf").hidden = true; svuotaSessione(); };
+$("anaFile").onchange = async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+  toast("Carico l'anagrafica…");
+  try{
+    const j = JSON.parse(await f.text());
+    if (j.formato !== "anagrafica-inventario-1" || !j.articoli || !j.barcode) throw new Error("Il file non è un'anagrafica creata dal programma Etichette SAP.");
+    await IDB.set("ana", j); S.ana = j; popolaMagazzini(); renderAna(); render();
+    toast("Anagrafica caricata");
+  }catch(err){ toast(err && err.message && !/JSON/.test(err.message) ? err.message : "File non valido: scegli anagrafica_inventario.json"); }
+};
+
+(async function avvio(){
+  S.modoUno = LS.get("modoUno", true); S.laser = LS.get("laser", false); S.suono = LS.get("suono", true); S.nome = LS.get("nome", "");
+  $("modoUno").setAttribute("aria-pressed", String(S.modoUno)); $("modoQta").setAttribute("aria-pressed", String(!S.modoUno));
+  $("optLaser").checked = S.laser; $("optSuono").checked = S.suono; $("nomeOp").value = S.nome; applicaLaser();
+  $("versione").textContent = NATIVO ? "App Conta Magazzino" : "Anteprima nel browser (fotocamera disponibile solo nell'app)";
+  S.ana = (await IDB.get("ana")) || null; renderAna();
+  S.sessioni = LS.get("sessioni", []);
+  const salvata = LS.get("sessione", null);
+  scegliSessione(S.sessioni.some(x => x.id === salvata) ? salvata : (S.sessioni[0] && S.sessioni[0].id));
+  focusScan();
+})();
+</script>
+</body>
+</html>

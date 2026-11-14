@@ -1,0 +1,8 @@
+{
+  "appId": "it.contamagazzino.conteggio",
+  "appName": "Conta Magazzino",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}
