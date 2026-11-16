@@ -36,6 +36,7 @@ FILE_ANAGRAFICA = os.path.join(EXPORT_DIR, "anagrafica_acquisti.json")
 FILE_REGISTRO = os.path.join(EXPORT_DIR, "acquisti_creati.json")
 FILE_CODICE = os.path.join(EXPORT_DIR, "acquisti_codice.txt")
 DIR_RICEVUTI = os.path.join(EXPORT_DIR, "ricevuti")
+NOME_ARCHIVIO = "creati"      # sottocartella di "ricevuti" con i documenti gia' creati in SAP
 PORTA = 8765
 
 _TIPI_SQL = {11: "2012", 12: "2014", 13: "2016", 14: "2017", 15: "2019", 16: "2022"}
@@ -512,6 +513,10 @@ def parti_anagrafica(dati, n_art=8000, n_bc=20000):
 def salva_ricevuto(dati):
     """Salva un documento arrivato da un telefono. Un nuovo invio dello stesso documento sostituisce il precedente."""
     valida(dati)
+    gia = leggi_registro().get(_chiave_file(dati))
+    if gia:
+        raise ErroreSAP("Questo documento e' gia' stato creato in SAP (" + ", ".join(gia.get("documenti", [])) +
+                        "). Per ordinare altro crea un documento nuovo nell'app.")
     dati = {k: v for k, v in dati.items() if not k.startswith("_")}
     dati["ricevuto"] = datetime.now().isoformat(timespec="seconds")
     nome = re.sub(r"[^A-Za-z0-9_-]", "", str(dati.get("id", ""))) or datetime.now().strftime("%Y%m%d%H%M%S")
@@ -522,8 +527,23 @@ def salva_ricevuto(dati):
     return percorso
 
 
+def archivia(percorso):
+    """Toglie dall'elenco un documento ricevuto, conservandolo nella sottocartella dei creati."""
+    if os.path.dirname(os.path.abspath(percorso)) != os.path.abspath(DIR_RICEVUTI):
+        return False          # file aperto a mano da un'altra cartella: non si tocca
+    arch = os.path.join(DIR_RICEVUTI, NOME_ARCHIVIO)
+    try:
+        os.makedirs(arch, exist_ok=True)
+        os.replace(percorso, os.path.join(arch, datetime.now().strftime("%Y%m%d_%H%M%S_") + os.path.basename(percorso)))
+        return True
+    except OSError:
+        return False
+
+
 def elenco_ricevuti(massimo=60):
-    """[(percorso, dati)] dei documenti ricevuti, dal piu' recente."""
+    """[(percorso, dati)] dei documenti ricevuti ancora da creare in SAP, dal piu' recente.
+    Quelli che risultano gia' creati vengono archiviati e non compaiono."""
+    reg = leggi_registro()
     try:
         nomi = [os.path.join(DIR_RICEVUTI, n) for n in os.listdir(DIR_RICEVUTI) if n.lower().endswith(".json")]
     except OSError:
@@ -532,9 +552,13 @@ def elenco_ricevuti(massimo=60):
     for p in sorted(nomi, key=os.path.getmtime, reverse=True)[:massimo]:
         try:
             with open(p, encoding="utf-8") as f:
-                out.append((p, json.load(f)))
+                d = json.load(f)
         except (OSError, ValueError):
-            pass
+            continue
+        if isinstance(d, dict) and _chiave_file(d) in reg:
+            archivia(p)
+        elif isinstance(d, dict):
+            out.append((p, d))
     return out
 
 
@@ -677,7 +701,7 @@ def main():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
 
-    stato = {"cfg": None, "conn": None, "dati": None, "ok": [], "scartate": [], "piano": []}
+    stato = {"cfg": None, "conn": None, "dati": None, "percorso": "", "ok": [], "scartate": [], "piano": []}
 
     def collega():
         if stato["conn"] is None:
@@ -732,7 +756,7 @@ def main():
     def carica(percorso):
         dati = leggi_file(percorso)
         ok, scartate = controlla(collega(), dati)
-        stato.update(dati=dati, ok=ok, scartate=scartate, piano=piano(dati, ok))
+        stato.update(dati=dati, percorso=percorso, ok=ok, scartate=scartate, piano=piano(dati, ok))
         mostra()
 
     def apri():
@@ -743,17 +767,32 @@ def main():
     ricevuti = []
 
     def aggiorna_ricevuti():
-        reg = leggi_registro()
         ricevuti[:] = elenco_ricevuti()
         lista.delete(0, "end")
         for _, d in ricevuti:
-            fatto = _chiave_file(d) in reg
             quando = str(d.get("ricevuto", ""))[5:16].replace("T", " ")
             quando = f"{quando[3:5]}/{quando[0:2]} {quando[6:]}" if len(quando) >= 11 else quando
-            lista.insert("end", f"{'✓ ' if fatto else '● '}{quando}  {'Ordine' if d.get('tipo') == 'ordine' else 'Richiesta'} - "
+            lista.insert("end", f"{quando}  {'Ordine' if d.get('tipo') == 'ordine' else 'Richiesta'} - "
                                 f"{d.get('operatore') or 'telefono'} ({len(d.get('righe', []))} righe)")
-            if fatto:
-                lista.itemconfig("end", foreground="#6b7280")
+
+    def elimina_ricevuto():
+        sel = lista.curselection()
+        if not sel or sel[0] >= len(ricevuti):
+            raise ErroreSAP("Fai prima clic sul documento da eliminare, nell'elenco a sinistra.")
+        percorso, d = ricevuti[sel[0]]
+        if not messagebox.askyesno("Acquisti SAP", f"Elimino dall'elenco il documento \"{d.get('nome', '')}\" di {d.get('operatore') or 'telefono'}?\n"
+                                                   "Non verra' creato in SAP. Sul telefono resta.", default="no"):
+            return
+        try:
+            os.remove(percorso)
+        except OSError as e:
+            raise ErroreSAP(f"Non riesco a eliminare il file:\n{e}")
+        if stato["percorso"] == percorso:
+            stato.update(dati=None, percorso="", ok=[], scartate=[], piano=[])
+            tab.delete(*tab.get_children())
+            b_crea.config(state="disabled", text="3. Crea documento in SAP")
+            info.set("Documento eliminato dall'elenco.")
+        aggiorna_ricevuti()
 
     def scegli_ricevuto(_evento=None):
         sel = lista.curselection()
@@ -792,7 +831,8 @@ def main():
         creati = crea_documenti(stato["cfg"]["sap"], utente.get().strip(), password.get(), versione_sql(conn), stato["piano"],
                                 richiedente=utente_sap(conn, utente.get().strip()))
         segna_creato(dati, creati)
-        aggiorna_ricevuti()
+        aggiorna_ricevuti()        # il documento creato esce dall'elenco e finisce nell'archivio
+        stato["piano"] = []        # lo stesso documento non si puo' creare una seconda volta
         testo = "\n".join(f"{c['titolo']} n. {c['numero']}" + (f" - {c['nome_fornitore']}" if c["nome_fornitore"] else "") + f" ({c['righe']} righe)" for c in creati)
         b_crea.config(state="disabled")
         info.set("Creato in SAP: " + testo.replace("\n", " · "))
@@ -818,7 +858,8 @@ def main():
     centro.pack(fill="both", expand=True)
     sinistra = ttk.Frame(centro)
     sinistra.pack(side="left", fill="y", padx=(0, 8))
-    ttk.Label(sinistra, text="Ricevuti dai telefoni  (● da fare, ✓ creato in SAP)").pack(anchor="w")
+    ttk.Label(sinistra, text="Ricevuti dai telefoni, da creare in SAP").pack(anchor="w")
+    ttk.Button(sinistra, text="Elimina dall'elenco", command=fai(elimina_ricevuto)).pack(side="bottom", anchor="w", pady=(6, 0))
     lista = tk.Listbox(sinistra, width=44, activestyle="none", exportselection=False)
     lista.pack(fill="both", expand=True)
     lista.bind("<<ListboxSelect>>", scegli_ricevuto)
