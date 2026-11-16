@@ -1,0 +1,65 @@
+# Compila l'app Android "Acquisti Magazzino" e la pubblica come Release (file APK da scaricare sul telefono).
+name: Compila app Acquisti
+
+on:
+  push:
+    branches: [main, app-acquisti]
+    paths: ["app-acquisti/**", ".github/workflows/app-acquisti.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app-acquisti
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app-acquisti/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Installa i componenti
+        run: npm ci
+
+      - name: Prepara il progetto Android
+        run: npx cap sync android
+
+      - name: Compila l'APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../build.log
+
+      - name: Riassunto dell'errore
+        if: failure()
+        run: |
+          test -f build.log || exit 0
+          msg=$(grep -nE "error:|e: |FAILURE|What went wrong|Could not|> " build.log | head -60 | sed -e 's/%/%25/g' -e 's/\r//g' | awk 'BEGIN{ORS="%0A"}{print}')
+          echo "::error title=Compilazione fallita::${msg}"
+
+      - name: Rinomina l'APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk AcquistiMagazzino.apk
+
+      - name: Pubblica la Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: acquisti-v1.0.${{ github.run_number }}
+          name: Acquisti Magazzino 1.0.${{ github.run_number }}
+          files: app-acquisti/AcquistiMagazzino.apk
+          make_latest: false
+          body: |
+            Scarica **AcquistiMagazzino.apk** dal telefono e aprilo per installarlo
+            (la prima volta Android chiede di consentire l'installazione da questa fonte).
+            Le versioni nuove si installano sopra la precedente: documenti e anagrafica restano.

@@ -1,4 +1,7 @@
 node_modules/
 app-android/build.log
 app-android/*.apk
+app-acquisti/build.log
+app-acquisti/*.apk
+__pycache__/
 .DS_Store

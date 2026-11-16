@@ -1,0 +1,8 @@
+{
+  "appId": "it.contamagazzino.acquisti",
+  "appName": "Acquisti Magazzino",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}

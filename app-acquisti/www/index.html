@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Acquisti Magazzino</title>
+<style>
+/* Stessa impostazione di Conta Magazzino (una colonna, schede in basso, codici in monospazio),
+   ma con il blu al posto dell'arancio: le due app si distinguono a colpo d'occhio. */
+:root{
+  --bg:#f2f4f6; --surface:#ffffff; --ink:#1b2126; --muted:#5b6670; --line:#d5dbe0;
+  --accent:#1f5fa8; --accent-ink:#ffffff; --ok:#2b7a3d; --warn:#b26a00; --bad:#b3261e; --chip:#e6eaee;
+  --f-ui:Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-code:"Roboto Mono","Droid Sans Mono",ui-monospace,monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#13171a; --surface:#1c2227; --ink:#e8ecef; --muted:#98a3ad; --line:#313a42;
+  --accent:#6aa9ee; --accent-ink:#07182b; --ok:#6cc985; --warn:#f0b04a; --bad:#ff8a80; --chip:#29313a; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:16px;line-height:1.4;
+  padding-top:env(safe-area-inset-top,0px);-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+.app{display:flex;flex-direction:column;min-height:100vh;max-width:720px;margin:0 auto}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);padding-block:10px}
+.top-row{display:flex;gap:10px;align-items:center}
+.brand{font-weight:700;font-size:15px;margin-right:auto;white-space:nowrap}
+.sess{font-size:13px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+label.f{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+select,textarea,input[type=text],input[type=number],input[type=search],input[type=date]{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0;width:100%}
+textarea{resize:vertical;min-height:64px}
+select:focus,textarea:focus,input:focus,button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:1px}
+main{flex:1;padding-block:14px 100px;display:flex;flex-direction:column;gap:14px}
+.tabp{display:flex;flex-direction:column;gap:12px}
+.banner{border-radius:var(--r);padding:10px 12px;font-size:14px;background:var(--chip);margin-bottom:8px}
+.banner.warn{background:color-mix(in srgb,var(--warn) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent)}
+.scan input{font-size:18px;padding:14px 12px}
+button{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;min-height:46px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.big{min-height:58px;font-size:18px;width:100%}
+button.link{border:0;background:transparent;color:var(--accent);padding:4px 0;min-height:36px;text-align:left}
+button:disabled{opacity:.45}
+.cam-btn{display:flex;align-items:center;justify-content:center;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 auto;min-width:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:14px;padding:8px 14px;border-radius:999px;background:var(--chip);min-height:auto}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.g{display:grid;gap:10px}
+.code{font-family:var(--f-code);font-weight:600;font-size:18px;overflow-wrap:anywhere}
+.meta{display:flex;gap:6px;flex-wrap:wrap;font-size:13px;color:var(--muted);align-items:center}
+.tag{font-family:var(--f-code);font-size:12px;padding:2px 7px;border-radius:5px;background:var(--chip);color:var(--ink)}
+.tag.warn{background:color-mix(in srgb,var(--warn) 24%,var(--surface))}
+.qty{display:grid;grid-template-columns:60px 1fr 60px;gap:8px}
+.qty input{text-align:center;font-family:var(--f-code);font-size:26px;font-weight:600;padding:8px}
+.qty button{font-size:26px;padding:0}
+.list{display:flex;flex-direction:column}
+.item{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center}
+.item:last-child{border-bottom:0}
+.item .c{font-family:var(--f-code);font-weight:600;font-size:15px;min-width:0;overflow-wrap:anywhere}
+.item .d{grid-column:1;font-size:14px;color:var(--muted);min-width:0}
+.item .q{grid-row:1/3;grid-column:2;display:flex;align-items:center;gap:6px}
+.item .q input{width:78px;text-align:right;font-family:var(--f-code);padding:8px}
+.item .q button{min-height:42px;padding:6px 12px}
+.item.tap{cursor:pointer}
+h2{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 0}
+h3{font-size:15px;margin:10px 0 0;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+h3 .tag{font-weight:400}
+.empty{padding:22px 4px;color:var(--muted);text-align:center;font-size:15px}
+.small{font-size:13px;color:var(--muted)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+nav.tabs button{border:0;border-radius:0;background:transparent;min-height:60px;font-size:14px;color:var(--muted);border-top:3px solid transparent;padding:6px 2px}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-top-color:var(--accent)}
+nav.tabs .n{display:inline-block;min-width:20px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:12px;margin-left:3px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);
+  padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:40;max-width:calc(100% - 32px);text-align:center}
+/* scelta del fornitore: pannello a tutto schermo con ricerca */
+#picker{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px calc(env(safe-area-inset-bottom,0px) + 12px);gap:10px}
+#picker .list{overflow:auto;flex:1;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:0 12px}
+
+/* lettura con fotocamera: la fotocamera e' disegnata DIETRO la pagina, che diventa trasparente */
+body.barcode-scanner-active{background:transparent!important}
+body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:none!important}
+#scanner{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
+.sc-top,.sc-bottom{background:rgba(10,12,11,.72);color:#fff;border-radius:14px;padding:12px 14px}
+.mirino{align-self:center;width:min(80vw,360px);aspect-ratio:1.8;border:3px solid rgba(255,255,255,.9);border-radius:16px;
+  box-shadow:0 0 0 2000px rgba(0,0,0,.18)}
+.sc-bottom{display:flex;gap:10px}
+.sc-bottom button{flex:1;min-height:56px;font-size:17px;border:0}
+.sc-bottom .stop{background:#fff;color:#111}
+.sc-bottom .luce{background:rgba(255,255,255,.18);color:#fff;flex:0 0 auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top wrap">
+    <div class="top-row">
+      <span class="brand">Acquisti Magazzino</span>
+      <span class="sess" id="docLabel">Nessun documento</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="banners"></div>
+
+    <!-- ARTICOLI: lettura codice a barre o ricerca -->
+    <section id="tab-art" class="tabp">
+      <button id="camBtn" class="primary big cam-btn" type="button">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16 8v8"/></svg>
+        Leggi con la fotocamera</button>
+      <div class="scan">
+        <input id="scanIn" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Cerca per codice o descrizione" enterkeyhint="search" aria-label="Codice a barre, codice articolo o descrizione">
+      </div>
+      <div id="risultati" class="card" hidden><div class="list" id="risList"></div></div>
+      <div id="artBox" class="card g"></div>
+    </section>
+
+    <!-- SOTTO SCORTA: proposta di riordino -->
+    <section id="tab-sotto" class="tabp" hidden>
+      <div class="card g">
+        <div class="row"><span class="grow"><span class="small">Fornitore</span><br><b id="ssFornNome">Tutti i fornitori</b></span>
+          <button type="button" id="ssFornBtn">Scegli</button><button type="button" id="ssFornTutti" hidden>Tutti</button></div>
+        <input id="ssFiltro" type="search" placeholder="Filtra per codice o descrizione" aria-label="Filtra">
+        <div class="small" id="ssInfo"></div>
+        <button type="button" id="ssTutti" class="primary" hidden>Aggiungi tutti al documento</button>
+      </div>
+      <div class="card"><div id="ssList" class="list"></div></div>
+    </section>
+
+    <!-- DOCUMENTO -->
+    <section id="tab-doc" class="tabp" hidden>
+      <div class="card g">
+        <label class="f" for="docSel">Documento</label>
+        <div class="row"><select id="docSel" class="grow" style="width:auto"></select><button type="button" id="docNuovo">Nuovo</button></div>
+        <div id="docTesta" class="g">
+          <label class="f">Tipo di documento in SAP</label>
+          <div class="chips">
+            <button class="chip" id="tipoRic" type="button" aria-pressed="true">Richiesta di acquisto</button>
+            <button class="chip" id="tipoOrd" type="button" aria-pressed="false">Ordine d'acquisto</button>
+          </div>
+          <div class="small" id="tipoInfo"></div>
+          <label class="f" for="magSel">Magazzino di destinazione</label>
+          <select id="magSel"></select>
+          <label class="f" for="consegna">Data di consegna richiesta</label>
+          <input id="consegna" type="date">
+          <label class="f" for="note">Note</label>
+          <textarea id="note" maxlength="250" placeholder="Finiscono nelle osservazioni del documento SAP"></textarea>
+        </div>
+      </div>
+      <h2 id="righeTit">Righe</h2>
+      <div class="card"><div id="righe"></div></div>
+      <div class="card g">
+        <p class="small" style="margin:0">Invia il file a chi lo apre sul server nel programma <b>Acquisti SAP</b> (WhatsApp, email o Drive): lì il documento viene controllato e creato in SAP.</p>
+        <button id="exportBtn" class="primary big" type="button">Invia file per SAP</button>
+        <div class="row" id="eliminaBox"><button id="eliminaDoc" type="button">Elimina questo documento</button>
+          <button id="eliminaConf" type="button" hidden style="border-color:var(--bad);color:var(--bad)">Conferma: elimina tutte le righe</button></div>
+      </div>
+    </section>
+
+    <!-- IMPOSTAZIONI -->
+    <section id="tab-imp" class="tabp" hidden>
+      <h2>Operatore</h2>
+      <div class="card g">
+        <label class="f" for="nomeOp">Il tuo nome (compare nel documento)</label>
+        <input id="nomeOp" type="text" placeholder="Es. Mario" autocomplete="name">
+      </div>
+      <h2>Anagrafica acquisti</h2>
+      <div class="card g">
+        <div id="anaInfo" class="small"></div>
+        <p class="small" style="margin:0">Sul server, nel programma Acquisti SAP: <b>Crea file anagrafica</b>. Manda il file <b>anagrafica_acquisti.json</b> al telefono (WhatsApp, email, Drive), scaricalo e sceglilo qui. Giacenze e scorte sono quelle del momento in cui il file è stato creato: rifallo prima di ogni giro di ordini.</p>
+        <input id="anaFile" type="file" accept="*/*">
+      </div>
+      <h2>Lettura</h2>
+      <div class="card g">
+        <label class="row" style="gap:10px"><input id="optLaser" type="checkbox" style="width:22px;height:22px"> <span>Palmare con lettore laser (non aprire la tastiera)</span></label>
+        <label class="row" style="gap:10px"><input id="optSuono" type="checkbox" checked style="width:22px;height:22px"> <span>Suono e vibrazione a ogni lettura</span></label>
+      </div>
+      <p class="small" id="versione"></p>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Sezioni"><div class="in" role="tablist">
+    <button role="tab" data-tab="art" aria-selected="true">Articoli</button>
+    <button role="tab" data-tab="sotto" aria-selected="false">Sotto scorta</button>
+    <button role="tab" data-tab="doc" aria-selected="false">Documento<span class="n" id="nRighe" hidden></span></button>
+    <button role="tab" data-tab="imp" aria-selected="false">Impostaz.</button>
+  </div></nav>
+</div>
+
+<div id="picker" hidden>
+  <div class="row"><b class="grow" id="pkTit">Scegli il fornitore</b><button type="button" id="pkChiudi">Annulla</button></div>
+  <input id="pkIn" type="search" placeholder="Cerca per nome o codice" aria-label="Cerca fornitore">
+  <div class="list" id="pkList"></div>
+</div>
+
+<div id="scanner" hidden>
+  <div class="sc-top"><div style="font-size:14px;color:#d4d8d5">Inquadra il codice a barre dell'articolo da ordinare</div></div>
+  <div class="mirino"></div>
+  <div class="sc-bottom">
+    <button class="luce" id="luceBtn" type="button" aria-label="Accendi o spegni la torcia">Torcia</button>
+    <button class="stop" id="stopBtn" type="button">Annulla</button>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+"use strict";
+const CAP = window.Capacitor;
+const NATIVO = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
+const P = (CAP && CAP.Plugins) || {};
+
+/* Colonne di ogni articolo nel file anagrafica (vedi acquisti.py sul server) */
+const A = {DESC:0, UM:1, PER:2, FORN:3, GIAC:4, ORD:5, IMP:6, MIN:7, MAX:8, MINORD:9, MULTI:10};
+
+const S = {
+  docs:[], did:null, righe:{}, ana:null, idx:[], sotto:[], sel:null,
+  ssForn:"", laser:false, suono:true, nome:"", torcia:false
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => (Math.round((n || 0) * 1000) / 1000).toLocaleString("it-IT");
+const num = v => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? NaN : n; };
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem("aq:" + k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem("aq:" + k, JSON.stringify(v)); return true; }catch{ toast("Memoria del telefono piena: invia ed elimina un documento"); return false; } }
+};
+const IDB = {
+  _p:null,
+  open(){ return this._p || (this._p = new Promise((ok, ko) => { const r = indexedDB.open("acquisti-magazzino", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); })); },
+  async get(k){ try{ const db = await this.open(); return await new Promise(ok => { const t = db.transaction("kv").objectStore("kv").get(k);
+    t.onsuccess = () => ok(t.result); t.onerror = () => ok(undefined); }); }catch{ return undefined; } },
+  async set(k, v){ const db = await this.open(); await new Promise((ok, ko) => { const t = db.transaction("kv", "readwrite");
+    t.objectStore("kv").put(v, k); t.oncomplete = ok; t.onerror = () => ko(t.error); }); }
+};
+
+/* ------------------------------------------------------------ segnali */
+let toastT;
+function toast(msg){ const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2400); }
+let audio;
+function beep(ok){
+  if (!S.suono) return;
+  try{ audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = ok ? 1320 : 330; o.type = ok ? "sine" : "square";
+    g.gain.setValueAtTime(.15, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + (ok ? .09 : .25));
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? .1 : .26)); }catch{}
+  try{ navigator.vibrate && navigator.vibrate(ok ? 35 : [70, 50, 70]); }catch{}
+}
+
+/* ------------------------------------------------------------ anagrafica */
+function art(codice){ return (S.ana && S.ana.articoli[codice]) || null; }
+function nomeForn(c){ return c ? ((S.ana && S.ana.fornitori && S.ana.fornitori[c]) || c) : ""; }
+function disponibile(a){ return (a[A.GIAC] || 0) + (a[A.ORD] || 0) - (a[A.IMP] || 0); }
+/* Quantita' proposta, in unita' di acquisto: riporta la disponibilita' (giacenza + in ordine - impegnato)
+   alla scorta massima, o alla minima se la massima non c'e', rispettando ordine minimo e multiplo. 0 = non serve. */
+function proposta(a){
+  const min = a[A.MIN] || 0; if (min <= 0) return 0;
+  const disp = disponibile(a); if (disp >= min) return 0;
+  let serve = Math.max(a[A.MAX] || 0, min) - disp;
+  if ((a[A.MINORD] || 0) > serve) serve = a[A.MINORD];
+  const m = a[A.MULTI] || 0; if (m > 0) serve = Math.ceil(serve / m - 1e-9) * m;
+  return Math.max(1, Math.ceil(serve / (a[A.PER] > 0 ? a[A.PER] : 1) - 1e-9));
+}
+function preparaAna(){
+  S.idx = []; S.sotto = [];
+  if (!S.ana) return;
+  for (const c in S.ana.articoli){ const a = S.ana.articoli[c];
+    S.idx.push([c, (c + " " + (a[A.DESC] || "")).toLowerCase()]);
+    const p = proposta(a); if (p > 0) S.sotto.push([c, p]); }
+  S.sotto.sort((x, y) => x[0].localeCompare(y[0]));
+}
+function trova(testo){            // codice a barre o codice articolo esatto
+  const a = S.ana; if (!a || !testo) return null;
+  let b = a.barcode && a.barcode[testo]; if (Array.isArray(b)) b = b[0];
+  if (b && a.articoli[b]) return {codice:b, barcode:testo};
+  const up = testo.toUpperCase(), k = a.articoli[testo] ? testo : (a.articoli[up] ? up : null);
+  return k ? {codice:k, barcode:""} : null;
+}
+function umTesto(a){ if (!a) return ""; const per = a[A.PER] || 1; return (a[A.UM] || "") + (per !== 1 ? ` da ${fmt(per)}` : ""); }
+function renderAna(){
+  const a = S.ana;
+  $("anaInfo").innerHTML = a
+    ? `<b>${Object.keys(a.articoli).length.toLocaleString("it-IT")}</b> articoli, <b>${Object.keys(a.fornitori || {}).length.toLocaleString("it-IT")}</b> fornitori, <b>${S.sotto.length.toLocaleString("it-IT")}</b> sotto scorta${a.azienda ? " · " + esc(a.azienda) : ""}${a.creato ? " · creata il " + new Date(a.creato).toLocaleString("it-IT", {dateStyle:"short", timeStyle:"short"}) : ""}.`
+    : "Nessuna anagrafica caricata.";
+}
+
+/* ------------------------------------------------------------ documenti (sul telefono) */
+function doc(){ return S.docs.find(x => x.id === S.did) || null; }
+function salvaDocs(){ LS.set("docs", S.docs); }
+function salvaRighe(){ if (S.did) LS.set("righe:" + S.did, S.righe); }
+function scegliDoc(id){
+  S.did = id || null; LS.set("doc", S.did);
+  S.righe = S.did ? LS.get("righe:" + S.did, {}) : {};
+  render();
+}
+function creaDoc(silenzioso){
+  const n = S.docs.length + 1, id = "d" + Date.now().toString(36);
+  const magPred = (S.ana && (S.ana.magazzino_predefinito || (S.ana.magazzini && S.ana.magazzini[0] && S.ana.magazzini[0][0]))) || "01";
+  const precedente = doc();
+  S.docs.unshift({id, nome:`Acquisti ${new Date().toLocaleDateString("it-IT")}${n > 1 ? " n." + n : ""}`, tipo:precedente ? precedente.tipo : "richiesta",
+    mag:LS.get("mag", magPred), consegna:"", note:"", creato:new Date().toISOString()});
+  salvaDocs(); scegliDoc(id);
+  if (!silenzioso) toast("Nuovo documento creato");
+}
+function eliminaDoc(){
+  const id = S.did; if (!id) return;
+  try{ localStorage.removeItem("aq:righe:" + id); }catch{}
+  S.docs = S.docs.filter(x => x.id !== id); salvaDocs();
+  scegliDoc(S.docs[0] && S.docs[0].id); toast("Documento eliminato");
+}
+function chiave(r){ return r.codice ? "c:" + r.codice : "b:" + r.barcode; }
+function mettiRiga(r, qta, somma){
+  if (!doc()) creaDoc(true);
+  const k = chiave(r), a = art(r.codice), x = S.righe[k] || {c:r.codice || "", b:r.barcode || "", d:a ? a[A.DESC] : "", u:a ? a[A.UM] : "", q:0, f:""};
+  x.q = somma ? (x.q || 0) + qta : qta;
+  if (r.forn !== undefined) x.f = r.forn; else if (!x.f && a) x.f = a[A.FORN] || "";
+  if (r.barcode && !x.b) x.b = r.barcode;
+  x.t = new Date().toISOString();
+  if (x.q > 0) S.righe[k] = x; else delete S.righe[k];
+  salvaRighe(); render();
+}
+
+/* ------------------------------------------------------------ scelta fornitore */
+let pkCb = null;
+function apriPicker(titolo, cb){
+  if (!S.ana || !S.ana.fornitori || !Object.keys(S.ana.fornitori).length){ toast("Carica l'anagrafica in Impostazioni per scegliere il fornitore"); return; }
+  pkCb = cb; $("pkTit").textContent = titolo; $("pkIn").value = ""; $("picker").hidden = false; renderPicker();
+  if (!S.laser) setTimeout(() => $("pkIn").focus(), 60);
+}
+function renderPicker(){
+  const f = $("pkIn").value.trim().toLowerCase(), out = []; let n = 0;
+  for (const [c, nome] of Object.entries(S.ana.fornitori)){
+    if (f && !(c + " " + nome).toLowerCase().includes(f)) continue;
+    if (++n > 60) break;
+    out.push(`<div class="item tap" data-f="${esc(c)}"><div class="d" style="color:var(--ink)">${esc(nome)}</div><div class="c" style="font-size:13px;font-weight:400">${esc(c)}</div></div>`);
+  }
+  $("pkList").innerHTML = out.length ? out.join("") + (n > 60 ? `<div class="empty">Scrivi qualche lettera per restringere l'elenco.</div>` : "") : `<div class="empty">Nessun fornitore trovato.</div>`;
+}
+
+/* ------------------------------------------------------------ fotocamera (ML Kit) */
+let ascoltatore = null;
+async function avviaScansione(){
+  if (!NATIVO || !P.BarcodeScanner){ toast("La fotocamera funziona nell'app installata sul telefono"); return; }
+  try{
+    let perm = await P.BarcodeScanner.checkPermissions();
+    if (perm.camera !== "granted") perm = await P.BarcodeScanner.requestPermissions();
+    if (perm.camera !== "granted"){ toast("Serve il permesso della fotocamera: abilitalo nelle impostazioni del telefono"); return; }
+    document.body.classList.add("barcode-scanner-active"); $("scanner").hidden = false; S.torcia = false; $("luceBtn").textContent = "Torcia";
+    let letto = false;
+    ascoltatore = await P.BarcodeScanner.addListener("barcodesScanned", ev => {
+      const b = ev && ev.barcodes && ev.barcodes[0]; if (!b || !b.rawValue || letto) return;
+      letto = true; fermaScansione().then(() => gestisciCodice(b.rawValue));
+    });
+    await P.BarcodeScanner.startScan({formats:["EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128", "CODE_39", "CODE_93", "ITF", "CODABAR", "QR_CODE", "DATA_MATRIX"]});
+  }catch(e){ await fermaScansione(); toast("Fotocamera non disponibile: " + (e && e.message ? e.message : "errore")); }
+}
+async function fermaScansione(){
+  document.body.classList.remove("barcode-scanner-active"); $("scanner").hidden = true;
+  try{ if (ascoltatore){ await ascoltatore.remove(); ascoltatore = null; } }catch{}
+  try{ await P.BarcodeScanner.stopScan(); }catch{}
+}
+
+/* ------------------------------------------------------------ scelta dell'articolo */
+function seleziona(r){            // r = {codice, barcode}
+  const a = art(r.codice), k = chiave(r), gia = S.righe[k];
+  S.sel = {codice:r.codice || "", barcode:r.barcode || "", forn:gia ? gia.f : (a ? a[A.FORN] || "" : ""),
+    q:gia ? gia.q : (a ? proposta(a) || 1 : 1)};
+  $("scanIn").value = ""; $("risultati").hidden = true;
+  renderArt(); vai("art", true);
+  setTimeout(() => { const q = $("qIn"); if (q){ q.focus(); q.select(); } }, 60);
+}
+function gestisciCodice(testo){
+  testo = (testo || "").trim(); if (!testo) return;
+  const t = trova(testo);
+  beep(!!t || !S.ana);
+  if (t) return seleziona(t);
+  if (/^[0-9A-Za-z\-._/]{6,}$/.test(testo) && !/\s/.test(testo) && cercaTesto(testo).length === 0) return seleziona({codice:"", barcode:testo});
+  renderRisultati(testo);
+}
+function cercaTesto(testo){
+  const parole = testo.toLowerCase().split(/\s+/).filter(Boolean), out = [];
+  if (!parole.length) return out;
+  for (const [c, t] of S.idx){ if (parole.every(p => t.includes(p))){ out.push(c); if (out.length >= 40) break; } }
+  return out;
+}
+function rigaArt(c){
+  const a = art(c), p = proposta(a);
+  return `<div class="item tap" data-c="${esc(c)}"><div class="c">${esc(c)}</div><div class="d">${esc(a[A.DESC])}</div>
+    <div class="q"><span class="tag ${p ? "warn" : ""}">${fmt(a[A.GIAC])}</span></div></div>`;
+}
+function renderRisultati(testo){
+  testo = (testo ?? $("scanIn").value).trim();
+  const box = $("risultati");
+  if (testo.length < 2){ box.hidden = true; return; }
+  if (!S.ana){ box.hidden = false; $("risList").innerHTML = `<div class="empty">Per cercare serve l'anagrafica: caricala in Impostazioni. Puoi comunque leggere i codici a barre.</div>`; return; }
+  const trovati = cercaTesto(testo);
+  box.hidden = false;
+  $("risList").innerHTML = trovati.length ? trovati.map(rigaArt).join("") + (trovati.length >= 40 ? `<div class="empty">Altri risultati: scrivi qualche lettera in più.</div>` : "")
+    : `<div class="empty">Nessun articolo trovato per "${esc(testo)}".</div>`;
+}
+function renderArt(){
+  const s = S.sel, box = $("artBox"), d = doc(), ordine = d && d.tipo === "ordine";
+  if (!s){ box.innerHTML = `<div class="empty">Leggi il codice a barre di un articolo oppure cercalo per codice o descrizione.<br>La scheda <b>Sotto scorta</b> propone cosa riordinare.</div>`; return; }
+  const a = art(s.codice), gia = S.righe[chiave(s)], p = a ? proposta(a) : 0;
+  box.innerHTML = `
+    <div><div class="code">${esc(s.codice || s.barcode)}</div>
+      <div>${a ? esc(a[A.DESC]) : `<span style="color:var(--warn)">${S.ana ? "Codice non presente in anagrafica" : "Anagrafica non caricata"}: verrà cercato in SAP dal programma sul server.</span>`}</div></div>
+    ${a ? `<div class="meta"><span class="tag">UM ${esc(umTesto(a)) || "-"}</span><span>Giacenza <b>${fmt(a[A.GIAC])}</b></span><span>In ordine <b>${fmt(a[A.ORD])}</b></span><span>Impegnato <b>${fmt(a[A.IMP])}</b></span>
+      ${a[A.MIN] > 0 ? `<span class="tag ${p ? "warn" : ""}">Scorta min ${fmt(a[A.MIN])}${a[A.MAX] > 0 ? " · max " + fmt(a[A.MAX]) : ""}</span>` : ""}</div>` : ""}
+    <div class="row"><span class="grow"><span class="small">Fornitore${ordine ? "" : " preferito (facoltativo)"}</span><br><b>${s.forn ? esc(nomeForn(s.forn)) : `<span style="color:var(--${ordine ? "warn" : "muted"})">Nessuno</span>`}</b></span>
+      <button type="button" id="selForn">Cambia</button></div>
+    <div class="qty">
+      <button type="button" id="qMeno" aria-label="Togli uno">−</button>
+      <input id="qIn" type="number" inputmode="decimal" min="0" step="any" value="${s.q}" aria-label="Quantità da ordinare">
+      <button type="button" id="qPiu" aria-label="Aggiungi uno">+</button>
+    </div>
+    <div class="small">${p ? `Proposta di riordino: <b>${fmt(p)}</b> ${esc(a[A.UM] || "")}. ` : ""}${gia ? `Già nel documento: <b>${fmt(gia.q)}</b>. La quantità qui sopra la sostituisce.` : "Quantità in unità di acquisto."}</div>
+    <div class="row"><button type="button" id="qAnnulla">Annulla</button><button type="button" id="qOk" class="primary grow">${gia ? "Aggiorna il documento" : "Aggiungi al documento"}</button></div>`;
+  const leggi = () => { const v = num($("qIn").value); return isNaN(v) || v < 0 ? null : v; };
+  $("qMeno").onclick = () => { const v = leggi() ?? 0; S.sel.q = Math.max(0, v - 1); $("qIn").value = S.sel.q; };
+  $("qPiu").onclick = () => { const v = leggi() ?? 0; S.sel.q = v + 1; $("qIn").value = S.sel.q; };
+  $("qIn").oninput = () => { const v = leggi(); if (v !== null) S.sel.q = v; };
+  $("selForn").onclick = () => apriPicker("Fornitore per " + (s.codice || s.barcode), c => { S.sel.forn = c; renderArt(); });
+  $("qAnnulla").onclick = () => { S.sel = null; renderArt(); focusScan(); };
+  const conferma = () => { const v = leggi(); if (v === null){ toast("Quantità non valida"); return; }
+    const r = S.sel; S.sel = null; mettiRiga({codice:r.codice, barcode:r.barcode, forn:r.forn}, v, false);
+    toast(v > 0 ? `${r.codice || r.barcode}: ${fmt(v)} nel documento` : "Riga tolta dal documento"); focusScan(); };
+  $("qOk").onclick = conferma;
+  $("qIn").onkeydown = e => { if (e.key === "Enter"){ e.preventDefault(); conferma(); } };
+}
+
+/* ------------------------------------------------------------ sotto scorta */
+function elencoSotto(){
+  const f = $("ssFiltro").value.trim().toLowerCase();
+  return S.sotto.filter(([c]) => { const a = art(c);
+    if (S.ssForn && (a[A.FORN] || "") !== S.ssForn) return false;
+    return !f || (c + " " + a[A.DESC]).toLowerCase().includes(f); });
+}
+function renderSotto(){
+  $("ssFornNome").textContent = S.ssForn ? nomeForn(S.ssForn) : "Tutti i fornitori"; $("ssFornTutti").hidden = !S.ssForn;
+  if (!S.ana){ $("ssInfo").textContent = ""; $("ssTutti").hidden = true;
+    $("ssList").innerHTML = `<div class="empty">Carica l'anagrafica in Impostazioni: la proposta usa giacenze e scorte minime di SAP.</div>`; return; }
+  const el = elencoSotto(), mancanti = el.filter(([c]) => !S.righe["c:" + c]);
+  $("ssInfo").textContent = `${el.length} articoli sotto la scorta minima${S.ssForn ? " per questo fornitore" : ""}. Disponibile = giacenza + in ordine − impegnato.`;
+  $("ssTutti").hidden = !mancanti.length || mancanti.length > 300; $("ssTutti").textContent = `Aggiungi tutti al documento (${mancanti.length})`;
+  $("ssList").innerHTML = el.length ? el.slice(0, 150).map(([c, p]) => { const a = art(c), gia = S.righe["c:" + c];
+    return `<div class="item"><div class="c">${esc(c)}</div>
+      <div class="d">${esc(a[A.DESC])}<br><span class="small">Disp. <b>${fmt(disponibile(a))}</b> · min ${fmt(a[A.MIN])}${a[A.FORN] && !S.ssForn ? " · " + esc(nomeForn(a[A.FORN])) : ""}</span></div>
+      <div class="q">${gia ? `<span class="tag">nel doc. ${fmt(gia.q)}</span>` : `<button type="button" data-add="${esc(c)}">+ ${fmt(p)} ${esc(a[A.UM] || "")}</button>`}</div></div>`; }).join("")
+      + (el.length > 150 ? `<div class="empty">Mostrati i primi 150: scegli un fornitore o usa il filtro.</div>` : "")
+    : `<div class="empty">${S.sotto.length ? "Nessun articolo corrisponde." : "Nessun articolo sotto scorta. Servono le scorte minime compilate nell'anagrafica articoli di SAP."}</div>`;
+}
+
+/* ------------------------------------------------------------ documento */
+function popolaMagazzini(){
+  const d = doc(), mags = (S.ana && S.ana.magazzini) || [], visti = new Set(mags.map(m => m[0]));
+  const opts = mags.map(([c, n]) => `<option value="${esc(c)}">${esc(c)}${n ? " · " + esc(n) : ""}</option>`);
+  if (d && d.mag && !visti.has(d.mag)) opts.push(`<option value="${esc(d.mag)}">${esc(d.mag)}</option>`);
+  if (!opts.length) opts.push(`<option value="01">01</option>`);
+  $("magSel").innerHTML = opts.join(""); if (d) $("magSel").value = d.mag;
+}
+function senzaFornitore(){ return Object.values(S.righe).filter(x => !x.f).length; }
+function renderDoc(){
+  const d = doc();
+  $("docLabel").textContent = d ? `${d.tipo === "ordine" ? "Ordine" : "Richiesta"} · ${d.nome}` : "Nessun documento";
+  $("docSel").innerHTML = S.docs.length ? S.docs.map(x => `<option value="${esc(x.id)}">${esc(x.nome)}</option>`).join("") : `<option value="">Nessun documento</option>`;
+  $("docSel").value = S.did || "";
+  $("docTesta").hidden = !d; $("eliminaBox").hidden = !d;
+  const righe = Object.entries(S.righe), n = righe.length;
+  $("nRighe").hidden = !n; $("nRighe").textContent = n;
+  $("righeTit").textContent = n ? `Righe (${n})` : "Righe";
+  $("exportBtn").disabled = !n;
+  if (!d){ $("righe").innerHTML = `<div class="empty">Aggiungi un articolo: il documento si crea da solo.</div>`; return; }
+  const ordine = d.tipo === "ordine";
+  $("tipoRic").setAttribute("aria-pressed", String(!ordine)); $("tipoOrd").setAttribute("aria-pressed", String(ordine));
+  $("tipoInfo").textContent = ordine ? "Sul server nasce un Ordine d'acquisto per ogni fornitore. I prezzi li mette SAP dal listino del fornitore."
+    : "Sul server nasce una Richiesta di acquisto. Il fornitore indicato sulle righe è solo un suggerimento per chi fa l'ordine.";
+  popolaMagazzini(); $("consegna").value = d.consegna || ""; if (document.activeElement !== $("note")) $("note").value = d.note || "";
+  if (!n){ $("righe").innerHTML = `<div class="empty">Nessuna riga: aggiungi articoli dalle schede Articoli o Sotto scorta.</div>`; return; }
+  const gruppi = new Map();
+  for (const [k, x] of righe.sort((a, b) => (a[1].c || a[1].b).localeCompare(b[1].c || b[1].b))){
+    const g = ordine ? (x.f || "") : "*"; if (!gruppi.has(g)) gruppi.set(g, []); gruppi.get(g).push([k, x]); }
+  const chiavi = [...gruppi.keys()].sort((a, b) => (a === "" ? -1 : b === "" ? 1 : nomeForn(a).localeCompare(nomeForn(b))));
+  $("righe").innerHTML = chiavi.map(g => {
+    const tit = !ordine ? "" : g ? `<h3>${esc(nomeForn(g))} <span class="tag">${esc(g)}</span></h3>` : `<h3 style="color:var(--warn)">Senza fornitore: tocca "Fornitore" su ogni riga</h3>`;
+    return tit + `<div class="list">` + gruppi.get(g).map(([k, x]) => {
+      const titolo = x.c || x.b;
+      return `<div class="item"><div class="c">${esc(titolo)}${x.u ? ` <span class="tag">${esc(x.u)}</span>` : ""}</div>
+        <div class="d">${esc(x.c ? (x.d || "") : "Non in anagrafica")}<br><button type="button" class="link" data-forn="${esc(k)}">${ordine ? "Fornitore" : (x.f ? "Fornitore: " + esc(nomeForn(x.f)) : "Fornitore: nessuno")}${ordine ? ": cambia" : ""}</button></div>
+        <div class="q"><input type="number" inputmode="decimal" min="0" step="any" value="${x.q}" data-k="${esc(k)}" aria-label="Quantità ${esc(titolo)}"><button type="button" data-del="${esc(k)}" aria-label="Elimina ${esc(titolo)}">✕</button></div></div>`; }).join("") + `</div>`;
+  }).join("");
+}
+function aggiornaDoc(campi){ const d = doc(); if (!d) return; Object.assign(d, campi); salvaDocs(); }
+
+/* ------------------------------------------------------------ invio del file */
+async function esporta(){
+  const d = doc(); if (!d) return;
+  const righe = Object.values(S.righe).filter(x => x.q > 0);
+  if (!righe.length){ toast("Il documento è vuoto"); return; }
+  if (!d.consegna){ toast("Indica la data di consegna richiesta"); $("consegna").focus(); return; }
+  if (d.tipo === "ordine" && senzaFornitore()){ toast(`Righe senza fornitore: ${senzaFornitore()}. Sceglilo prima di inviare l'ordine`); return; }
+  const dati = {formato:"documento-acquisti-1", id:d.id, tipo:d.tipo, nome:d.nome, operatore:S.nome || "", magazzino:d.mag, consegna:d.consegna, note:d.note || "",
+    esportato:new Date().toISOString(),
+    righe:righe.map(x => ({codice:x.c || "", barcode:x.b || "", descrizione:x.d || "", um:x.u || "", quantita:x.q, fornitore:x.f || ""}))};
+  const testo = JSON.stringify(dati, null, 1);
+  const pulito = t => (t || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+  const nome = `acquisti_${d.tipo}_${pulito(d.nome) || "documento"}_${pulito(S.nome) || "telefono"}.json`;
+  const titolo = d.tipo === "ordine" ? "Ordine d'acquisto" : "Richiesta di acquisto";
+  if (NATIVO && P.Filesystem && P.Share){
+    try{
+      const w = await P.Filesystem.writeFile({path:nome, data:testo, directory:"CACHE", encoding:"utf8"});
+      await P.Share.share({title:titolo, text:`${titolo} "${d.nome}" di ${S.nome || "telefono"}: ${righe.length} righe`, files:[w.uri], dialogTitle:"Invia il documento"});
+    }catch(e){ if (!/cancel/i.test(String(e && e.message))) toast("Invio non riuscito: " + (e && e.message ? e.message : "errore")); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([testo], {type:"application/json"})); a.download = nome; a.click();
+}
+
+/* ------------------------------------------------------------ rendering ed eventi */
+function banners(){
+  const b = [];
+  if (!S.ana) b.push(`<div class="banner warn">Anagrafica non caricata: caricala da <b>Impostazioni</b> per vedere descrizioni, fornitori e articoli sotto scorta.</div>`);
+  if (!S.nome) b.push(`<div class="banner">Scrivi il tuo nome in <b>Impostazioni</b>: comparirà nel documento.</div>`);
+  $("banners").innerHTML = b.join("");
+}
+function render(){ renderArt(); renderSotto(); renderDoc(); banners(); }
+function vai(tab, senzaFuoco){
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll(".tabp").forEach(p => p.hidden = p.id !== "tab-" + tab);
+  window.scrollTo(0, 0);
+  if (tab === "art" && !senzaFuoco) focusScan();
+}
+function focusScan(){ if (S.laser && !$("tab-art").hidden) $("scanIn").focus({preventScroll:true}); }
+function applicaLaser(){ $("scanIn").setAttribute("inputmode", S.laser ? "none" : "search"); }
+
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => vai(b.dataset.tab));
+let cercaT;
+$("scanIn").addEventListener("input", () => { clearTimeout(cercaT); cercaT = setTimeout(() => renderRisultati(), 180); });
+$("scanIn").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Tab"){ e.preventDefault(); clearTimeout(cercaT); gestisciCodice(e.target.value); } });
+$("risList").addEventListener("click", e => { const el = e.target.closest("[data-c]"); if (el) seleziona({codice:el.dataset.c, barcode:""}); });
+$("camBtn").onclick = avviaScansione;
+$("stopBtn").onclick = fermaScansione;
+$("luceBtn").onclick = async () => { try{ await P.BarcodeScanner.toggleTorch(); S.torcia = !S.torcia; $("luceBtn").textContent = S.torcia ? "Spegni" : "Torcia"; }catch{ toast("Torcia non disponibile"); } };
+
+$("pkIn").oninput = renderPicker;
+$("pkChiudi").onclick = () => { $("picker").hidden = true; pkCb = null; };
+$("pkList").addEventListener("click", e => { const el = e.target.closest("[data-f]"); if (!el) return; const cb = pkCb; pkCb = null; $("picker").hidden = true; cb && cb(el.dataset.f); });
+
+$("ssFornBtn").onclick = () => apriPicker("Sotto scorta: quale fornitore?", c => { S.ssForn = c; renderSotto(); });
+$("ssFornTutti").onclick = () => { S.ssForn = ""; renderSotto(); };
+$("ssFiltro").oninput = renderSotto;
+$("ssList").addEventListener("click", e => { const c = e.target.dataset && e.target.dataset.add; if (!c) return;
+  const p = proposta(art(c)) || 1; mettiRiga({codice:c, barcode:""}, p, false); toast(`${c}: ${fmt(p)} nel documento`); });
+$("ssTutti").onclick = () => { const el = elencoSotto().filter(([c]) => !S.righe["c:" + c]); if (!el.length) return;
+  if (!doc()) creaDoc(true);
+  for (const [c, p] of el){ const a = art(c); S.righe["c:" + c] = {c, b:"", d:a[A.DESC], u:a[A.UM], q:p, f:a[A.FORN] || "", t:new Date().toISOString()}; }
+  salvaRighe(); render(); toast(`${el.length} articoli aggiunti al documento`); };
+
+$("docSel").onchange = e => scegliDoc(e.target.value);
+$("docNuovo").onclick = () => creaDoc(false);
+$("tipoRic").onclick = () => { aggiornaDoc({tipo:"richiesta"}); render(); };
+$("tipoOrd").onclick = () => { if (!doc()) creaDoc(true); aggiornaDoc({tipo:"ordine"}); render(); };
+$("magSel").onchange = e => { aggiornaDoc({mag:e.target.value}); LS.set("mag", e.target.value); };
+$("consegna").onchange = e => aggiornaDoc({consegna:e.target.value});
+$("note").oninput = e => aggiornaDoc({note:e.target.value});
+$("righe").addEventListener("change", e => { const k = e.target.dataset.k; if (!k) return;
+  const v = num(e.target.value), r = S.righe[k]; if (!r) return;
+  if (isNaN(v) || v < 0){ e.target.value = r.q; toast("Quantità non valida"); return; }
+  r.q = v; if (v === 0) delete S.righe[k]; salvaRighe(); render(); });
+$("righe").addEventListener("click", e => { const t = e.target.dataset || {};
+  if (t.del){ delete S.righe[t.del]; salvaRighe(); render(); toast("Riga eliminata"); }
+  else if (t.forn){ const r = S.righe[t.forn]; if (r) apriPicker("Fornitore per " + (r.c || r.b), c => { r.f = c; salvaRighe(); render(); }); } });
+$("exportBtn").onclick = esporta;
+$("eliminaDoc").onclick = () => { $("eliminaConf").hidden = false; };
+$("eliminaConf").onclick = () => { $("eliminaConf").hidden = true; eliminaDoc(); };
+
+$("optLaser").onchange = e => { S.laser = e.target.checked; LS.set("laser", S.laser); applicaLaser(); };
+$("optSuono").onchange = e => { S.suono = e.target.checked; LS.set("suono", S.suono); };
+$("nomeOp").onchange = e => { S.nome = e.target.value.trim(); LS.set("nome", S.nome); banners(); };
+$("anaFile").onchange = async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return;
+  toast("Carico l'anagrafica…");
+  try{
+    const j = JSON.parse(await f.text());
+    if (j.formato === "anagrafica-inventario-1") throw new Error("Questo è il file di Conta Magazzino: qui serve anagrafica_acquisti.json.");
+    if (j.formato !== "anagrafica-acquisti-1" || !j.articoli) throw new Error("Il file non è un'anagrafica creata dal programma Acquisti SAP.");
+    await IDB.set("ana", j); S.ana = j; preparaAna(); renderAna(); render();
+    toast("Anagrafica caricata");
+  }catch(err){ toast(err && err.message && !/JSON/.test(err.message) ? err.message : "File non valido: scegli anagrafica_acquisti.json"); }
+};
+
+(async function avvio(){
+  S.laser = LS.get("laser", false); S.suono = LS.get("suono", true); S.nome = LS.get("nome", "");
+  $("optLaser").checked = S.laser; $("optSuono").checked = S.suono; $("nomeOp").value = S.nome; applicaLaser();
+  $("versione").textContent = NATIVO ? "App Acquisti Magazzino" : "Anteprima nel browser (fotocamera disponibile solo nell'app)";
+  S.ana = (await IDB.get("ana")) || null; preparaAna(); renderAna();
+  S.docs = LS.get("docs", []);
+  const salvato = LS.get("doc", null);
+  scegliDoc(S.docs.some(x => x.id === salvato) ? salvato : (S.docs[0] && S.docs[0].id));
+  focusScan();
+})();
+</script>
+</body>
+</html>
