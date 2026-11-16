@@ -26,6 +26,7 @@ import secrets
 import socket
 import sys
 import threading
+import time
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -541,6 +542,8 @@ def avvia_ricezione(coda, codice, porta=PORTA, file_anagrafica=None):
     """Avvia in sottofondo il servizio che riceve dai telefoni. Ritorna il server (server.shutdown() per fermarlo)."""
     cache = {"mtime": None, "parti": None}
     blocco = threading.Lock()
+    sbagliati = {}     # indirizzo -> [numero di codici sbagliati, fino a quando e' sospeso]
+    MAX_SBAGLIATI, SOSPENSIONE = 5, 60
 
     def anagrafica():
         percorso = file_anagrafica or FILE_ANAGRAFICA
@@ -555,6 +558,7 @@ def avvia_ricezione(coda, codice, porta=PORTA, file_anagrafica=None):
 
     class Gestore(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        timeout = 30          # chiude i collegamenti rimasti aperti senza far nulla
 
         def log_message(self, *a):
             pass
@@ -573,9 +577,26 @@ def avvia_ricezione(coda, codice, porta=PORTA, file_anagrafica=None):
             self.wfile.write(corpo)
 
         def _autorizzato(self):
-            if secrets.compare_digest((self.headers.get("X-Codice") or "").strip().encode(), codice.encode()):
-                return True
-            self._rispondi(403, {"errore": "Codice di accesso sbagliato: e' scritto nella finestra del programma Acquisti SAP."})
+            # dopo 5 codici sbagliati di fila l'indirizzo aspetta un minuto: provare tutti i codici diventa impraticabile
+            ip, ora = self.client_address[0], time.monotonic()
+            with blocco:
+                n, fino = sbagliati.get(ip, (0, 0))
+                if ora < fino:
+                    sospeso = True
+                else:
+                    sospeso = False
+                    if secrets.compare_digest((self.headers.get("X-Codice") or "").strip().encode(), codice.encode()):
+                        sbagliati.pop(ip, None)
+                        return True
+                    n += 1
+                    sbagliati[ip] = (0, ora + SOSPENSIONE) if n >= MAX_SBAGLIATI else (n, 0)
+                    if len(sbagliati) > 5000:
+                        sbagliati.clear()
+            self.close_connection = True
+            if sospeso:
+                self._rispondi(429, {"errore": "Troppi codici sbagliati: aspetta un minuto e riprova."})
+            else:
+                self._rispondi(403, {"errore": "Codice di accesso sbagliato: e' scritto nella finestra del programma Acquisti SAP."})
             return False
 
         def do_OPTIONS(self):
@@ -620,7 +641,11 @@ def avvia_ricezione(coda, codice, porta=PORTA, file_anagrafica=None):
             coda.put(percorso)
             self._rispondi(200, {"ok": True, "righe": len(dati.get("righe", []))})
 
-    server = ThreadingHTTPServer(("0.0.0.0", porta), Gestore)
+    class Server(ThreadingHTTPServer):
+        def handle_error(self, request, client_address):
+            pass   # collegamenti interrotti dal telefono: niente righe di errore nella finestra nera
+
+    server = Server(("0.0.0.0", porta), Gestore)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
