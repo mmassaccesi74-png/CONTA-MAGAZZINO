@@ -11,19 +11,31 @@ Va copiato sul server nella STESSA cartella del programma Etichette SAP
   2. Apri file del telefono -> controlla le righe con SAP
   3. Crea documento in SAP  -> Richiesta di acquisto, oppure un Ordine per fornitore (DI API)
 
+Finche' il programma e' aperto, i telefoni collegati al Wi-Fi aziendale possono inviare i documenti
+e scaricare l'anagrafica direttamente (indirizzo e codice di accesso sono scritti nella finestra).
+
 Avvio: doppio clic su acquisti.bat (oppure: python acquisti.py)
 """
 
 import json
 import math
 import os
+import queue
+import re
+import secrets
+import socket
 import sys
+import threading
 from datetime import date, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 EXPORT_DIR = os.path.join(SCRIPT_DIR, "export")
 FILE_ANAGRAFICA = os.path.join(EXPORT_DIR, "anagrafica_acquisti.json")
 FILE_REGISTRO = os.path.join(EXPORT_DIR, "acquisti_creati.json")
+FILE_CODICE = os.path.join(EXPORT_DIR, "acquisti_codice.txt")
+DIR_RICEVUTI = os.path.join(EXPORT_DIR, "ricevuti")
+PORTA = 8765
 
 _TIPI_SQL = {11: "2012", 12: "2014", 13: "2016", 14: "2017", 15: "2019", 16: "2022"}
 _OGG_RICHIESTA = 1470000113   # BoObjectTypes.oPurchaseRequest
@@ -156,6 +168,10 @@ def leggi_file(percorso):
             dati = json.load(f)
     except (OSError, ValueError) as e:
         raise ErroreSAP(f"Non riesco a leggere il file:\n{percorso}\n{e}")
+    return valida(dati)
+
+
+def valida(dati):
     if not isinstance(dati, dict) or dati.get("formato") != "documento-acquisti-1":
         if isinstance(dati, dict) and dati.get("formato") == "conteggio-inventario-1":
             raise ErroreSAP("Questo e' un file di conteggio inventario: aprilo nel programma Etichette SAP, scheda Inventario.")
@@ -275,7 +291,8 @@ def piano(dati, righe_ok):
 # Registro dei documenti gia' creati (per non creare due volte lo stesso)
 # --------------------------------------------------------------------------
 def _chiave_file(dati):
-    return f"{dati.get('id', '')}|{dati.get('esportato', '')}"
+    # l'identificativo del documento sul telefono: se viene inviato due volte, il programma se ne accorge
+    return str(dati.get("id") or dati.get("esportato") or "")
 
 
 def leggi_registro():
@@ -445,6 +462,171 @@ def crea_documenti(sap_cfg, utente, password, vers_sql, documenti, richiedente="
 
 
 # --------------------------------------------------------------------------
+# Ricezione diretta dai telefoni (Wi-Fi aziendale)
+# --------------------------------------------------------------------------
+def codice_accesso():
+    """Codice a 6 cifre che i telefoni devono conoscere: creato la prima volta, poi sempre lo stesso."""
+    try:
+        with open(FILE_CODICE, encoding="utf-8") as f:
+            c = f.read().strip()
+        if c:
+            return c
+    except OSError:
+        pass
+    c = f"{secrets.randbelow(900000) + 100000}"
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    with open(FILE_CODICE, "w", encoding="utf-8") as f:
+        f.write(c)
+    return c
+
+
+def indirizzo_locale():
+    """L'indirizzo di questo computer sulla rete aziendale."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("10.255.255.255", 1))   # non spedisce nulla: serve solo a sapere quale scheda di rete si usa
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return "?"
+
+
+def parti_anagrafica(dati, n_art=8000, n_bc=20000):
+    """L'anagrafica divisa in pezzi piccoli, piu' leggeri da scaricare per il telefono.
+    Il pezzo 0 contiene tutto tranne articoli e codici a barre, piu' il numero dei pezzi."""
+    parti = [{k: v for k, v in dati.items() if k not in ("articoli", "barcode")}]
+    for nome, n in (("articoli", n_art), ("barcode", n_bc)):
+        voci = list(dati.get(nome, {}).items())
+        for i in range(0, len(voci), n):
+            parti.append({nome: dict(voci[i:i + n])})
+    parti[0]["parti"] = len(parti)
+    return parti
+
+
+def salva_ricevuto(dati):
+    """Salva un documento arrivato da un telefono. Un nuovo invio dello stesso documento sostituisce il precedente."""
+    valida(dati)
+    dati = {k: v for k, v in dati.items() if not k.startswith("_")}
+    dati["ricevuto"] = datetime.now().isoformat(timespec="seconds")
+    nome = re.sub(r"[^A-Za-z0-9_-]", "", str(dati.get("id", ""))) or datetime.now().strftime("%Y%m%d%H%M%S")
+    os.makedirs(DIR_RICEVUTI, exist_ok=True)
+    percorso = os.path.join(DIR_RICEVUTI, f"{nome}.json")
+    with open(percorso, "w", encoding="utf-8") as f:
+        json.dump(dati, f, ensure_ascii=False, indent=1)
+    return percorso
+
+
+def elenco_ricevuti(massimo=60):
+    """[(percorso, dati)] dei documenti ricevuti, dal piu' recente."""
+    try:
+        nomi = [os.path.join(DIR_RICEVUTI, n) for n in os.listdir(DIR_RICEVUTI) if n.lower().endswith(".json")]
+    except OSError:
+        return []
+    out = []
+    for p in sorted(nomi, key=os.path.getmtime, reverse=True)[:massimo]:
+        try:
+            with open(p, encoding="utf-8") as f:
+                out.append((p, json.load(f)))
+        except (OSError, ValueError):
+            pass
+    return out
+
+
+def avvia_ricezione(coda, codice, porta=PORTA, file_anagrafica=None):
+    """Avvia in sottofondo il servizio che riceve dai telefoni. Ritorna il server (server.shutdown() per fermarlo)."""
+    cache = {"mtime": None, "parti": None}
+    blocco = threading.Lock()
+
+    def anagrafica():
+        percorso = file_anagrafica or FILE_ANAGRAFICA
+        with blocco:
+            m = os.path.getmtime(percorso)     # OSError se non e' mai stata creata
+            if cache["mtime"] != m:
+                with open(percorso, encoding="utf-8") as f:
+                    cache["parti"] = [json.dumps(p, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                                      for p in parti_anagrafica(json.load(f))]
+                cache["mtime"] = m
+            return cache["parti"]
+
+    class Gestore(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *a):
+            pass
+
+        def _rispondi(self, stato, corpo):
+            if not isinstance(corpo, bytes):
+                corpo = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
+            self.send_response(stato)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(corpo)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Codice")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(corpo)
+
+        def _autorizzato(self):
+            if secrets.compare_digest((self.headers.get("X-Codice") or "").strip().encode(), codice.encode()):
+                return True
+            self._rispondi(403, {"errore": "Codice di accesso sbagliato: e' scritto nella finestra del programma Acquisti SAP."})
+            return False
+
+        def do_OPTIONS(self):
+            self._rispondi(204, b"")
+
+        def do_GET(self):
+            if not self._autorizzato():
+                return
+            percorso = self.path.split("?")[0].rstrip("/")
+            if percorso == "/ping":
+                return self._rispondi(200, {"ok": True, "programma": "acquisti-sap"})
+            m = re.fullmatch(r"/anagrafica/(\d+)", percorso)
+            if m:
+                try:
+                    parti = anagrafica()
+                except (OSError, ValueError):
+                    return self._rispondi(404, {"errore": "Sul server non c'e' ancora l'anagrafica: premi 'Crea file anagrafica' nel programma Acquisti SAP."})
+                i = int(m.group(1))
+                if i < len(parti):
+                    return self._rispondi(200, parti[i])
+            self._rispondi(404, {"errore": "Richiesta non riconosciuta."})
+
+        def do_POST(self):
+            try:
+                lung = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                lung = 0
+            corpo = self.rfile.read(lung) if 0 < lung <= 5_000_000 else b""
+            if lung > 5_000_000:
+                self.close_connection = True
+            if not self._autorizzato():
+                return
+            if self.path.split("?")[0].rstrip("/") != "/documento":
+                return self._rispondi(404, {"errore": "Richiesta non riconosciuta."})
+            try:
+                dati = json.loads(corpo.decode("utf-8"))
+                percorso = salva_ricevuto(dati)
+            except ErroreSAP as e:
+                return self._rispondi(400, {"errore": str(e)})
+            except (ValueError, OSError) as e:
+                return self._rispondi(400, {"errore": f"Documento non valido: {e}"})
+            coda.put(percorso)
+            self._rispondi(200, {"ok": True, "righe": len(dati.get("righe", []))})
+
+    server = ThreadingHTTPServer(("0.0.0.0", porta), Gestore)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+# --------------------------------------------------------------------------
 # Finestra
 # --------------------------------------------------------------------------
 def _collega():
@@ -522,14 +704,52 @@ def main():
         b_crea.config(state="normal" if n else "disabled",
                       text="Crea Richiesta di acquisto in SAP" if dati["tipo"] == "richiesta" else f"Crea {n} Ordin{'e' if n == 1 else 'i'} d'acquisto in SAP")
 
-    def apri():
-        percorso = filedialog.askopenfilename(title="File dell'app Acquisti Magazzino", filetypes=[("File acquisti", "*.json"), ("Tutti i file", "*.*")])
-        if not percorso:
-            return
+    def carica(percorso):
         dati = leggi_file(percorso)
         ok, scartate = controlla(collega(), dati)
         stato.update(dati=dati, ok=ok, scartate=scartate, piano=piano(dati, ok))
         mostra()
+
+    def apri():
+        percorso = filedialog.askopenfilename(title="File dell'app Acquisti Magazzino", filetypes=[("File acquisti", "*.json"), ("Tutti i file", "*.*")])
+        if percorso:
+            carica(percorso)
+
+    ricevuti = []
+
+    def aggiorna_ricevuti():
+        reg = leggi_registro()
+        ricevuti[:] = elenco_ricevuti()
+        lista.delete(0, "end")
+        for _, d in ricevuti:
+            fatto = _chiave_file(d) in reg
+            quando = str(d.get("ricevuto", ""))[5:16].replace("T", " ")
+            quando = f"{quando[3:5]}/{quando[0:2]} {quando[6:]}" if len(quando) >= 11 else quando
+            lista.insert("end", f"{'✓ ' if fatto else '● '}{quando}  {'Ordine' if d.get('tipo') == 'ordine' else 'Richiesta'} - "
+                                f"{d.get('operatore') or 'telefono'} ({len(d.get('righe', []))} righe)")
+            if fatto:
+                lista.itemconfig("end", foreground="#6b7280")
+
+    def scegli_ricevuto(_evento=None):
+        sel = lista.curselection()
+        if sel and sel[0] < len(ricevuti):
+            fai(lambda: carica(ricevuti[sel[0]][0]))()
+
+    def controlla_coda():
+        arrivati = 0
+        try:
+            while True:
+                coda.get_nowait()
+                arrivati += 1
+        except queue.Empty:
+            pass
+        if arrivati:
+            aggiorna_ricevuti()
+            fin.bell()
+            d = ricevuti[0][1] if ricevuti else {}
+            info.set(f"Arrivato dal telefono di {d.get('operatore') or '?'}: {'Ordine' if d.get('tipo') == 'ordine' else 'Richiesta'} "
+                     f"\"{d.get('nome', '')}\". Fai clic sul documento nell'elenco a sinistra per controllarlo.")
+        fin.after(1000, controlla_coda)
 
     def crea():
         dati = stato["dati"]
@@ -547,6 +767,7 @@ def main():
         creati = crea_documenti(stato["cfg"]["sap"], utente.get().strip(), password.get(), versione_sql(conn), stato["piano"],
                                 richiedente=utente_sap(conn, utente.get().strip()))
         segna_creato(dati, creati)
+        aggiorna_ricevuti()
         testo = "\n".join(f"{c['titolo']} n. {c['numero']}" + (f" - {c['nome_fornitore']}" if c["nome_fornitore"] else "") + f" ({c['righe']} righe)" for c in creati)
         b_crea.config(state="disabled")
         info.set("Creato in SAP: " + testo.replace("\n", " · "))
@@ -555,19 +776,27 @@ def main():
 
     fin = tk.Tk()
     fin.title("Acquisti SAP - richieste e ordini dall'app Acquisti Magazzino")
-    fin.geometry("1000x620")
-    fin.minsize(760, 480)
+    fin.geometry("1180x640")
+    fin.minsize(900, 480)
 
     alto = ttk.Frame(fin, padding=10)
     alto.pack(fill="x")
     ttk.Button(alto, text="1. Crea file anagrafica", command=fai(anagrafica)).pack(side="left")
     ttk.Button(alto, text="2. Apri file del telefono", command=fai(apri)).pack(side="left", padx=8)
+    rete = tk.StringVar()
+    ttk.Label(alto, textvariable=rete, font=("Segoe UI", 10, "bold")).pack(side="right")
 
     info = tk.StringVar(value="Crea il file anagrafica per i telefoni, oppure apri un file ricevuto dall'app.")
-    ttk.Label(fin, textvariable=info, padding=(10, 0, 10, 8), wraplength=960, justify="left").pack(fill="x")
+    ttk.Label(fin, textvariable=info, padding=(10, 0, 10, 8), wraplength=1140, justify="left").pack(fill="x")
 
     centro = ttk.Frame(fin, padding=(10, 0))
     centro.pack(fill="both", expand=True)
+    sinistra = ttk.Frame(centro)
+    sinistra.pack(side="left", fill="y", padx=(0, 8))
+    ttk.Label(sinistra, text="Ricevuti dai telefoni  (● da fare, ✓ creato in SAP)").pack(anchor="w")
+    lista = tk.Listbox(sinistra, width=44, activestyle="none", exportselection=False)
+    lista.pack(fill="both", expand=True)
+    lista.bind("<<ListboxSelect>>", scegli_ricevuto)
     tab = ttk.Treeview(centro, columns=("desc", "qta", "um", "stato"), selectmode="browse")
     for col, titolo, larg, anc in (("#0", "Documento / Articolo", 230, "w"), ("desc", "Descrizione", 380, "w"), ("qta", "Quantita'", 80, "e"),
                                    ("um", "UM", 60, "w"), ("stato", "Fornitore / Esito", 220, "w")):
@@ -591,6 +820,17 @@ def main():
     b_crea = ttk.Button(basso, text="3. Crea documento in SAP", command=fai(crea), state="disabled")
     b_crea.pack(side="right")
 
+    coda = queue.Queue()
+    try:
+        codice = codice_accesso()
+        avvia_ricezione(coda, codice)
+        rete.set(f"Per i telefoni:  indirizzo {indirizzo_locale()}:{PORTA}   codice {codice}")
+    except OSError as e:
+        rete.set("Ricezione dai telefoni non attiva")
+        info.set(f"Non riesco ad aprire la porta {PORTA} per ricevere dai telefoni ({e}). Forse il programma e' gia' aperto in un'altra finestra. "
+                 "I file si possono comunque aprire a mano.")
+    aggiorna_ricevuti()
+    fin.after(1000, controlla_coda)
     fin.mainloop()
 
 

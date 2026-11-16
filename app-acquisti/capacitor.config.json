@@ -3,6 +3,9 @@
   "appName": "Acquisti Magazzino",
   "webDir": "www",
   "android": {
-    "allowMixedContent": false
+    "allowMixedContent": true
+  },
+  "server": {
+    "cleartext": true
   }
 }

@@ -159,8 +159,9 @@ body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:n
       <h2 id="righeTit">Righe</h2>
       <div class="card"><div id="righe"></div></div>
       <div class="card g">
-        <p class="small" style="margin:0">Invia il file a chi lo apre sul server nel programma <b>Acquisti SAP</b> (WhatsApp, email o Drive): lì il documento viene controllato e creato in SAP.</p>
-        <button id="exportBtn" class="primary big" type="button">Invia file per SAP</button>
+        <p class="small" style="margin:0" id="invioInfo"></p>
+        <button id="sendBtn" class="primary big" type="button" hidden>Invia al server</button>
+        <button id="exportBtn" class="big" type="button">Invia come file</button>
         <div class="row" id="eliminaBox"><button id="eliminaDoc" type="button">Elimina questo documento</button>
           <button id="eliminaConf" type="button" hidden style="border-color:var(--bad);color:var(--bad)">Conferma: elimina tutte le righe</button></div>
       </div>
@@ -173,10 +174,22 @@ body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:n
         <label class="f" for="nomeOp">Il tuo nome (compare nel documento)</label>
         <input id="nomeOp" type="text" placeholder="Es. Mario" autocomplete="name">
       </div>
+      <h2>Collegamento al server</h2>
+      <div class="card g">
+        <p class="small" style="margin:0">Con il telefono sul Wi-Fi dell'azienda e il programma <b>Acquisti SAP</b> aperto sul server, i documenti arrivano direttamente. Indirizzo e codice sono scritti in alto a destra nella finestra del programma.</p>
+        <label class="f" for="srvAddr">Indirizzo del server</label>
+        <input id="srvAddr" type="text" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Es. 192.168.1.10:8765">
+        <label class="f" for="srvCod">Codice di accesso</label>
+        <input id="srvCod" type="text" inputmode="numeric" autocomplete="off" placeholder="6 cifre">
+        <button type="button" id="srvProva">Prova collegamento</button>
+        <div id="srvInfo" class="small"></div>
+      </div>
       <h2>Anagrafica acquisti</h2>
       <div class="card g">
         <div id="anaInfo" class="small"></div>
-        <p class="small" style="margin:0">Sul server, nel programma Acquisti SAP: <b>Crea file anagrafica</b>. Manda il file <b>anagrafica_acquisti.json</b> al telefono (WhatsApp, email, Drive), scaricalo e sceglilo qui. Giacenze e scorte sono quelle del momento in cui il file è stato creato: rifallo prima di ogni giro di ordini.</p>
+        <button type="button" id="srvAna" class="primary">Scarica anagrafica dal server</button>
+        <p class="small" style="margin:0">Giacenze e scorte sono quelle del momento in cui sul server è stato premuto <b>Crea file anagrafica</b>: va rifatto, e riscaricato qui, prima di ogni giro di ordini.</p>
+        <p class="small" style="margin:0">Senza collegamento: fatti mandare il file <b>anagrafica_acquisti.json</b> (WhatsApp, email, Drive) e sceglilo qui.</p>
         <input id="anaFile" type="file" accept="*/*">
       </div>
       <h2>Lettura</h2>
@@ -223,7 +236,7 @@ const A = {DESC:0, UM:1, PER:2, FORN:3, GIAC:4, ORD:5, IMP:6, MIN:7, MAX:8, MINO
 
 const S = {
   docs:[], did:null, righe:{}, ana:null, idx:[], sotto:[], sel:null,
-  ssForn:"", laser:false, suono:true, nome:"", torcia:false
+  ssForn:"", laser:false, suono:true, nome:"", torcia:false, srv:{addr:"", cod:""}
 };
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -479,7 +492,14 @@ function renderDoc(){
   const righe = Object.entries(S.righe), n = righe.length;
   $("nRighe").hidden = !n; $("nRighe").textContent = n;
   $("righeTit").textContent = n ? `Righe (${n})` : "Righe";
-  $("exportBtn").disabled = !n;
+  const srv = !!baseServer();
+  $("sendBtn").hidden = !srv; $("sendBtn").disabled = !n || inviando; $("exportBtn").disabled = !n;
+  $("exportBtn").classList.toggle("primary", !srv);
+  if (!inviando) $("sendBtn").textContent = d && d.inviato ? "Invia di nuovo al server" : "Invia al server";
+  $("invioInfo").innerHTML = d && d.inviato
+    ? `<b style="color:var(--ok)">Inviato al server</b> il ${new Date(d.inviato).toLocaleString("it-IT", {dateStyle:"short", timeStyle:"short"})} (${d.inviatoRighe ?? "?"} righe). Se lo modifichi e lo invii di nuovo, sul server sostituisce il precedente.`
+    : srv ? "<b>Invia al server</b> manda il documento al programma Acquisti SAP, dove viene controllato e creato in SAP. Serve il Wi-Fi dell'azienda."
+          : "Manda il file a chi lo apre sul server nel programma <b>Acquisti SAP</b> (WhatsApp, email o Drive). Per l'invio diretto imposta il server in <b>Impostazioni</b>.";
   if (!d){ $("righe").innerHTML = `<div class="empty">Aggiungi un articolo: il documento si crea da solo.</div>`; return; }
   const ordine = d.tipo === "ordine";
   $("tipoRic").setAttribute("aria-pressed", String(!ordine)); $("tipoOrd").setAttribute("aria-pressed", String(ordine));
@@ -503,15 +523,91 @@ function renderDoc(){
 function aggiornaDoc(campi){ const d = doc(); if (!d) return; Object.assign(d, campi); salvaDocs(); }
 
 /* ------------------------------------------------------------ invio del file */
-async function esporta(){
-  const d = doc(); if (!d) return;
+/* ------------------------------------------------------------ collegamento diretto al server (Wi-Fi aziendale) */
+function baseServer(){
+  let a = (S.srv.addr || "").trim().replace(/\s+/g, ""); if (!a) return "";
+  if (!/^https?:\/\//i.test(a)) a = "http://" + a;
+  a = a.replace(/\/+$/, "");
+  if (!/:\d+$/.test(a.replace(/^https?:\/\//i, ""))) a += ":8765";
+  return a;
+}
+const NON_RAGGIUNGIBILE = "Server non raggiungibile. Controlla che il telefono sia sul Wi-Fi dell'azienda, che il programma Acquisti SAP sia aperto sul server e che l'indirizzo sia giusto.";
+async function chiama(metodo, percorso, corpo){
+  const base = baseServer(); if (!base) throw new Error("Scrivi l'indirizzo del server in Impostazioni.");
+  const url = base + percorso, headers = {"X-Codice":(S.srv.cod || "").trim()};
+  if (corpo) headers["Content-Type"] = "application/json";
+  let stato, dati;
+  if (NATIVO && P.CapacitorHttp){        // richiesta fatta dall'app, non dalla pagina: nessun blocco verso la rete interna
+    let r;
+    try{ r = await P.CapacitorHttp.request({url, method:metodo, headers, data:corpo, connectTimeout:7000, readTimeout:40000}); }
+    catch{ throw new Error(NON_RAGGIUNGIBILE); }
+    stato = r.status; dati = r.data;
+    if (typeof dati === "string"){ try{ dati = JSON.parse(dati); }catch{ dati = null; } }
+  } else {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 40000);
+    let r;
+    try{ r = await fetch(url, {method:metodo, headers, body:corpo ? JSON.stringify(corpo) : undefined, signal:ctl.signal}); }
+    catch{ throw new Error(NON_RAGGIUNGIBILE); } finally{ clearTimeout(t); }
+    stato = r.status; try{ dati = await r.json(); }catch{ dati = null; }
+  }
+  if (stato !== 200) throw new Error((dati && dati.errore) || (stato === 403 ? "Codice di accesso sbagliato." : "Il server ha risposto con un errore (" + stato + ")."));
+  if (!dati) throw new Error("Risposta del server non valida: l'indirizzo è quello del programma Acquisti SAP?");
+  return dati;
+}
+function srvMsg(testo, tipo){ const el = $("srvInfo"); el.textContent = testo; el.style.color = tipo === "ok" ? "var(--ok)" : tipo === "bad" ? "var(--bad)" : ""; }
+async function provaServer(){
+  srvMsg("Provo il collegamento…");
+  try{ const r = await chiama("GET", "/ping"); if (r.programma !== "acquisti-sap") throw new Error("A questo indirizzo non risponde il programma Acquisti SAP.");
+    srvMsg("Collegamento riuscito: il server risponde.", "ok"); }
+  catch(e){ srvMsg(e.message, "bad"); }
+}
+let scaricando = false;
+async function scaricaAna(){
+  if (scaricando) return; scaricando = true; $("srvAna").disabled = true;
+  const stato = t => { $("anaInfo").textContent = t; };
+  try{
+    stato("Scarico l'anagrafica dal server…");
+    const j = await chiama("GET", "/anagrafica/0"), n = j.parti || 1;
+    if (j.formato !== "anagrafica-acquisti-1") throw new Error("Il server non ha un'anagrafica valida.");
+    j.articoli = {}; j.barcode = {};
+    for (let i = 1; i < n; i++){
+      stato(`Scarico l'anagrafica dal server… ${Math.round(i / n * 100)}%`);
+      const p = await chiama("GET", "/anagrafica/" + i);
+      if (p.articoli) Object.assign(j.articoli, p.articoli);
+      if (p.barcode) Object.assign(j.barcode, p.barcode);
+    }
+    delete j.parti;
+    await IDB.set("ana", j); S.ana = j; preparaAna(); renderAna(); render();
+    toast("Anagrafica scaricata dal server");
+  }catch(e){ renderAna(); toast(e.message); }
+  finally{ scaricando = false; $("srvAna").disabled = false; }
+}
+let inviando = false;
+async function inviaServer(){
+  if (inviando) return;
+  const p = preparaInvio(); if (!p) return;
+  inviando = true; $("sendBtn").disabled = true; $("sendBtn").textContent = "Invio in corso…";
+  try{
+    const r = await chiama("POST", "/documento", p.dati);
+    aggiornaDoc({inviato:new Date().toISOString(), inviatoRighe:r.righe});
+    beep(true); toast(`Arrivato al server: ${r.righe} righe`);
+  }catch(e){ beep(false); toast(e.message); }
+  finally{ inviando = false; render(); }
+}
+
+function preparaInvio(){
+  const d = doc(); if (!d) return null;
   const righe = Object.values(S.righe).filter(x => x.q > 0);
-  if (!righe.length){ toast("Il documento è vuoto"); return; }
-  if (!d.consegna){ toast("Indica la data di consegna richiesta"); $("consegna").focus(); return; }
-  if (d.tipo === "ordine" && senzaFornitore()){ toast(`Righe senza fornitore: ${senzaFornitore()}. Sceglilo prima di inviare l'ordine`); return; }
-  const dati = {formato:"documento-acquisti-1", id:d.id, tipo:d.tipo, nome:d.nome, operatore:S.nome || "", magazzino:d.mag, consegna:d.consegna, note:d.note || "",
+  if (!righe.length){ toast("Il documento è vuoto"); return null; }
+  if (!d.consegna){ toast("Indica la data di consegna richiesta"); $("consegna").focus(); return null; }
+  if (d.tipo === "ordine" && senzaFornitore()){ toast(`Righe senza fornitore: ${senzaFornitore()}. Sceglilo prima di inviare l'ordine`); return null; }
+  return {d, righe, dati:{formato:"documento-acquisti-1", id:d.id, tipo:d.tipo, nome:d.nome, operatore:S.nome || "", magazzino:d.mag, consegna:d.consegna, note:d.note || "",
     esportato:new Date().toISOString(),
-    righe:righe.map(x => ({codice:x.c || "", barcode:x.b || "", descrizione:x.d || "", um:x.u || "", quantita:x.q, fornitore:x.f || ""}))};
+    righe:righe.map(x => ({codice:x.c || "", barcode:x.b || "", descrizione:x.d || "", um:x.u || "", quantita:x.q, fornitore:x.f || ""}))}};
+}
+async function esporta(){
+  const p = preparaInvio(); if (!p) return;
+  const {d, righe, dati} = p;
   const testo = JSON.stringify(dati, null, 1);
   const pulito = t => (t || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
   const nome = `acquisti_${d.tipo}_${pulito(d.nome) || "documento"}_${pulito(S.nome) || "telefono"}.json`;
@@ -581,6 +677,11 @@ $("righe").addEventListener("click", e => { const t = e.target.dataset || {};
   if (t.del){ delete S.righe[t.del]; salvaRighe(); render(); toast("Riga eliminata"); }
   else if (t.forn){ const r = S.righe[t.forn]; if (r) apriPicker("Fornitore per " + (r.c || r.b), c => { r.f = c; salvaRighe(); render(); }); } });
 $("exportBtn").onclick = esporta;
+$("sendBtn").onclick = inviaServer;
+const salvaSrv = () => { S.srv = {addr:$("srvAddr").value.trim(), cod:$("srvCod").value.trim()}; LS.set("srv", S.srv); srvMsg(""); renderDoc(); };
+$("srvAddr").onchange = salvaSrv; $("srvCod").onchange = salvaSrv;
+$("srvProva").onclick = () => { salvaSrv(); provaServer(); };
+$("srvAna").onclick = () => { salvaSrv(); scaricaAna(); };
 $("eliminaDoc").onclick = () => { $("eliminaConf").hidden = false; };
 $("eliminaConf").onclick = () => { $("eliminaConf").hidden = true; eliminaDoc(); };
 
@@ -601,6 +702,7 @@ $("anaFile").onchange = async e => {
 
 (async function avvio(){
   S.laser = LS.get("laser", false); S.suono = LS.get("suono", true); S.nome = LS.get("nome", "");
+  S.srv = LS.get("srv", {addr:"", cod:""}); $("srvAddr").value = S.srv.addr || ""; $("srvCod").value = S.srv.cod || "";
   $("optLaser").checked = S.laser; $("optSuono").checked = S.suono; $("nomeOp").value = S.nome; applicaLaser();
   $("versione").textContent = NATIVO ? "App Acquisti Magazzino" : "Anteprima nel browser (fotocamera disponibile solo nell'app)";
   S.ana = (await IDB.get("ana")) || null; preparaAna(); renderAna();

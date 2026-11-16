@@ -6,8 +6,9 @@ App per preparare **Richieste di acquisto** e **Ordini d'acquisto** per SAP Busi
   oppure dalla scheda **Sotto scorta** (giacenza + in ordine − impegnato sotto la scorta minima di SAP).
 - Per ogni riga: quantità in unità di acquisto e fornitore (proposto quello abituale dell'articolo).
 - Sul documento: tipo (richiesta o ordine), magazzino, data di consegna richiesta, note.
-- Il documento resta sul telefono; con **Invia file per SAP** si manda il file `acquisti_*.json`
-  (WhatsApp, email, Drive) a chi lo apre sul server con il programma `pc-acquisti/acquisti.py`.
+- **Invia al server**: con il telefono sul Wi-Fi aziendale il documento arriva direttamente al programma
+  `pc-acquisti/acquisti.py` aperto sul server (porta 8765, codice di accesso mostrato nella finestra).
+  Allo stesso modo l'app scarica l'anagrafica. In alternativa **Invia come file** (WhatsApp, email, Drive).
 
 ## Programma sul server (`pc-acquisti`)
 Copiare `acquisti.py` e `acquisti.bat` nella cartella del programma Etichette SAP
