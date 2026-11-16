@@ -5,3 +5,4 @@ app-acquisti/build.log
 app-acquisti/*.apk
 __pycache__/
 .DS_Store
+pc-acquisti/export/
