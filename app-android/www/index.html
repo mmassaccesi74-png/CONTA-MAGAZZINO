@@ -144,8 +144,9 @@ body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:n
         <div id="righe" class="list" style="margin-top:6px"></div></div>
       <h2>Invia il conteggio</h2>
       <div class="card" style="display:grid;gap:10px">
-        <p class="small" style="margin:0">Invia il file con tutte le righe di questa sessione (tutti i magazzini) a chi lo apre nel programma Etichette SAP, scheda Inventario: WhatsApp, email o Drive.</p>
-        <button id="exportBtn" class="primary big" type="button">Invia file per SAP</button>
+        <p class="small" style="margin:0" id="invioInfo"></p>
+        <button id="sendBtn" class="primary big" type="button" hidden>Invia al server</button>
+        <button id="exportBtn" class="big" type="button">Invia come file</button>
       </div>
     </section>
 
@@ -164,10 +165,21 @@ body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:n
         <div class="row" id="eliminaBox" hidden><button id="eliminaSess" type="button">Svuota questa sessione</button>
           <button id="eliminaConf" type="button" hidden style="border-color:var(--bad);color:var(--bad)">Conferma: elimina tutte le righe</button></div>
       </div>
+      <h2>Collegamento al server</h2>
+      <div class="card" style="display:grid;gap:8px">
+        <p class="small" style="margin:0">Con il telefono sul Wi-Fi dell'azienda e il programma <b>Etichette SAP</b> aperto sul server, il conteggio arriva direttamente nella scheda Inventario. Indirizzo e codice sono scritti nella scheda Inventario del programma.</p>
+        <label class="f" for="srvAddr">Indirizzo del server</label>
+        <input id="srvAddr" type="text" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Es. 192.168.1.10:8766">
+        <label class="f" for="srvCod">Codice di accesso</label>
+        <input id="srvCod" type="text" inputmode="numeric" autocomplete="off" placeholder="6 cifre">
+        <button type="button" id="srvProva">Prova collegamento</button>
+        <div id="srvInfo" class="small"></div>
+      </div>
       <h2>Anagrafica articoli</h2>
       <div class="card" style="display:grid;gap:10px">
         <div id="anaInfo" class="small"></div>
-        <p class="small" style="margin:0">Nel programma Etichette SAP: scheda Inventario &gt; <b>Crea file anagrafica</b>. Manda il file al telefono (WhatsApp, email, Drive), scaricalo e sceglilo qui.</p>
+        <button type="button" id="srvAna" class="primary" hidden>Scarica anagrafica dal server</button>
+        <p class="small" style="margin:0">Sul server, nella scheda Inventario, premi prima <b>Crea file anagrafica</b>. Senza collegamento: fatti mandare il file <b>anagrafica_inventario.json</b> (WhatsApp, email, Drive) e sceglilo qui.</p>
         <input id="anaFile" type="file" accept="*/*">
       </div>
       <h2>Lettura</h2>
@@ -204,7 +216,8 @@ const P = (CAP && CAP.Plugins) || {};
 
 const S = {
   sessioni:[], sid:null, mag:"", ana:null, fogli:{}, ultimo:null,
-  modoUno:true, laser:false, suono:true, nome:"", scansione:false, torcia:false, ultimaLettura:{v:"", t:0}
+  modoUno:true, laser:false, suono:true, nome:"", scansione:false, torcia:false, ultimaLettura:{v:"", t:0},
+  srv:{addr:"", cod:""}
 };
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -344,7 +357,7 @@ function renderScanner(ok){
 }
 
 /* ------------------------------------------------------------ rendering */
-function render(){ renderSessione(); renderConta(); renderElenco(); banners(); }
+function render(){ renderSessione(); renderConta(); renderElenco(); renderInvio(); banners(); }
 function renderSessione(){
   const s = S.sessioni.find(x => x.id === S.sid);
   $("sessLabel").textContent = s ? s.nome : "Nessuna sessione";
@@ -419,13 +432,103 @@ function svuotaSessione(){
   scegliSessione(S.sessioni[0] && S.sessioni[0].id); toast("Sessione eliminata");
 }
 
+/* ------------------------------------------------------------ collegamento diretto al server (Wi-Fi aziendale) */
+const PORTA_SRV = 8766;
+function baseServer(){
+  let a = (S.srv.addr || "").trim().replace(/\s+/g, ""); if (!a) return "";
+  if (!/^https?:\/\//i.test(a)) a = "http://" + a;
+  a = a.replace(/\/+$/, "");
+  if (!/:\d+$/.test(a.replace(/^https?:\/\//i, ""))) a += ":" + PORTA_SRV;
+  return a;
+}
+const NON_RAGGIUNGIBILE = "Server non raggiungibile. Controlla che il telefono sia sul Wi-Fi dell'azienda, che il programma Etichette SAP sia aperto sul server e che l'indirizzo sia giusto.";
+async function chiama(metodo, percorso, corpo){
+  const base = baseServer(); if (!base) throw new Error("Scrivi l'indirizzo del server in Impostazioni.");
+  const url = base + percorso, headers = {"X-Codice":(S.srv.cod || "").trim()};
+  if (corpo) headers["Content-Type"] = "application/json";
+  let stato, dati;
+  if (NATIVO && P.CapacitorHttp){        // richiesta fatta dall'app, non dalla pagina: nessun blocco verso la rete interna
+    let r;
+    try{ r = await P.CapacitorHttp.request({url, method:metodo, headers, data:corpo, connectTimeout:7000, readTimeout:40000}); }
+    catch{ throw new Error(NON_RAGGIUNGIBILE); }
+    stato = r.status; dati = r.data;
+    if (typeof dati === "string"){ try{ dati = JSON.parse(dati); }catch{ dati = null; } }
+  } else {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 40000);
+    let r;
+    try{ r = await fetch(url, {method:metodo, headers, body:corpo ? JSON.stringify(corpo) : undefined, signal:ctl.signal}); }
+    catch{ throw new Error(NON_RAGGIUNGIBILE); } finally{ clearTimeout(t); }
+    stato = r.status; try{ dati = await r.json(); }catch{ dati = null; }
+  }
+  if (stato !== 200) throw new Error((dati && dati.errore) || (stato === 403 ? "Codice di accesso sbagliato." : "Il server ha risposto con un errore (" + stato + ")."));
+  if (!dati) throw new Error("Risposta del server non valida: l'indirizzo è quello della scheda Inventario del programma Etichette SAP?");
+  return dati;
+}
+function srvMsg(testo, tipo){ const el = $("srvInfo"); el.textContent = testo; el.style.color = tipo === "ok" ? "var(--ok)" : tipo === "bad" ? "var(--bad)" : ""; }
+async function provaServer(){
+  srvMsg("Provo il collegamento…");
+  try{ const r = await chiama("GET", "/ping"); if (r.programma !== "inventario-sap") throw new Error("A questo indirizzo non risponde la scheda Inventario del programma Etichette SAP.");
+    srvMsg("Collegamento riuscito: il server risponde.", "ok"); }
+  catch(e){ srvMsg(e.message, "bad"); }
+}
+let scaricando = false;
+async function scaricaAna(){
+  if (scaricando) return; scaricando = true; $("srvAna").disabled = true;
+  const stato = t => { $("anaInfo").textContent = t; };
+  try{
+    stato("Scarico l'anagrafica dal server…");
+    const j = await chiama("GET", "/anagrafica/0"), n = j.parti || 1;
+    if (j.formato !== "anagrafica-inventario-1") throw new Error("Il server non ha un'anagrafica valida.");
+    j.articoli = {}; j.barcode = {};
+    for (let i = 1; i < n; i++){
+      stato(`Scarico l'anagrafica dal server… ${Math.round(i / n * 100)}%`);
+      const p = await chiama("GET", "/anagrafica/" + i);
+      if (p.articoli) Object.assign(j.articoli, p.articoli);
+      if (p.barcode) Object.assign(j.barcode, p.barcode);
+    }
+    delete j.parti;
+    await IDB.set("ana", j); S.ana = j; popolaMagazzini(); renderAna(); render();
+    toast("Anagrafica scaricata dal server");
+  }catch(e){ renderAna(); toast(e.message); }
+  finally{ scaricando = false; $("srvAna").disabled = false; }
+}
+let inviando = false;
+async function inviaServer(){
+  if (inviando) return;
+  const p = preparaInvio(); if (!p) return;
+  inviando = true; $("sendBtn").disabled = true; $("sendBtn").textContent = "Invio in corso…";
+  try{
+    const r = await chiama("POST", "/conteggio", p.dati);
+    if (p.s){ p.s.inviato = new Date().toISOString(); p.s.inviatoRighe = r.righe; LS.set("sessioni", S.sessioni); }
+    beep(true); toast(`Arrivato al server: ${r.righe} righe`);
+  }catch(e){ beep(false); toast(e.message); }
+  finally{ inviando = false; render(); }
+}
+function renderInvio(){
+  const s = S.sessioni.find(x => x.id === S.sid), srv = !!baseServer();
+  let n = 0; for (const f of Object.values(S.fogli)) for (const x of Object.values(f)) if (x.q > 0) n++;
+  $("sendBtn").hidden = !srv; $("sendBtn").disabled = !n || inviando; $("exportBtn").disabled = !n;
+  $("exportBtn").classList.toggle("primary", !srv);
+  $("srvAna").hidden = !srv;
+  if (!inviando) $("sendBtn").textContent = s && s.inviato ? "Invia di nuovo al server" : "Invia al server";
+  $("invioInfo").innerHTML = s && s.inviato
+    ? `<b style="color:var(--ok)">Inviato al server</b> il ${new Date(s.inviato).toLocaleString("it-IT", {dateStyle:"short", timeStyle:"short"})} (${s.inviatoRighe ?? "?"} righe). Se continui a contare puoi inviarlo di nuovo: sul server sostituisce il precedente di questo telefono.`
+    : srv ? "<b>Invia al server</b> manda tutte le righe di questa sessione (tutti i magazzini) alla scheda Inventario del programma Etichette SAP. Serve il Wi-Fi dell'azienda."
+          : "Invia il file con tutte le righe di questa sessione (tutti i magazzini) a chi lo apre nel programma Etichette SAP, scheda Inventario: WhatsApp, email o Drive. Per l'invio diretto imposta il server in <b>Impostazioni</b>.";
+}
+
 /* ------------------------------------------------------------ invio del file */
-async function esporta(){
+function preparaInvio(){
   const s = S.sessioni.find(x => x.id === S.sid);
   const righe = [];
   for (const [mag, f] of Object.entries(S.fogli)) for (const x of Object.values(f)) if (x.q > 0)
     righe.push({magazzino:mag, codice:x.c || "", barcode:x.b || "", um:x.u || "", quantita:x.q, operatore:S.nome || "Telefono"});
-  const dati = {formato:"conteggio-inventario-1", sessione:s ? s.nome : "", operatore:S.nome || "", esportato:new Date().toISOString(), righe};
+  if (!righe.length){ toast("Non ci sono righe da inviare"); return null; }
+  return {s, righe, dati:{formato:"conteggio-inventario-1", id:S.sid || "", sessione:s ? s.nome : "", operatore:S.nome || "", esportato:new Date().toISOString(), righe}};
+}
+async function esporta(){
+  const p = preparaInvio(); if (!p) return;
+  const {s, righe, dati} = p;
   const testo = JSON.stringify(dati, null, 1);
   const pulito = t => (t || "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
   const nome = `conteggio_${pulito(s && s.nome) || "inventario"}_${pulito(S.nome) || "telefono"}.json`;
@@ -477,6 +580,11 @@ $("righe").addEventListener("click", e => { const k = e.target.dataset && e.targ
   delete foglio(S.mag)[k]; salvaFogli(); render(); toast("Riga eliminata"); });
 $("filtro").oninput = renderElenco;
 $("exportBtn").onclick = esporta;
+$("sendBtn").onclick = inviaServer;
+const salvaSrv = () => { S.srv = {addr:$("srvAddr").value.trim(), cod:$("srvCod").value.trim()}; LS.set("srv", S.srv); srvMsg(""); render(); };
+$("srvAddr").onchange = salvaSrv; $("srvCod").onchange = salvaSrv;
+$("srvProva").onclick = () => { salvaSrv(); provaServer(); };
+$("srvAna").onclick = () => { salvaSrv(); scaricaAna(); };
 $("sessSel").onchange = e => scegliSessione(e.target.value);
 $("creaSess").onclick = creaSessione;
 $("eliminaSess").onclick = () => { $("eliminaConf").hidden = false; };
@@ -496,6 +604,7 @@ $("anaFile").onchange = async e => {
   S.modoUno = LS.get("modoUno", true); S.laser = LS.get("laser", false); S.suono = LS.get("suono", true); S.nome = LS.get("nome", "");
   $("modoUno").setAttribute("aria-pressed", String(S.modoUno)); $("modoQta").setAttribute("aria-pressed", String(!S.modoUno));
   $("optLaser").checked = S.laser; $("optSuono").checked = S.suono; $("nomeOp").value = S.nome; applicaLaser();
+  S.srv = LS.get("srv", {addr:"", cod:""}); $("srvAddr").value = S.srv.addr || ""; $("srvCod").value = S.srv.cod || "";
   $("versione").textContent = NATIVO ? "App Conta Magazzino" : "Anteprima nel browser (fotocamera disponibile solo nell'app)";
   S.ana = (await IDB.get("ana")) || null; renderAna();
   S.sessioni = LS.get("sessioni", []);
