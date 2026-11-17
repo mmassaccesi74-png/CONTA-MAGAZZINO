@@ -238,11 +238,12 @@ class App:
         self.info_doc = tk.StringVar(value="Scegli il tipo di documento, scrivi il numero e premi Carica (o Invio).")
         ttk.Label(f, textvariable=self.info_doc, style="Titolo.TLabel").pack(anchor="w", pady=(12, 2))
         ttk.Label(f, text="Togli la spunta agli articoli da non stampare e correggi il numero di etichette "
-                          "dove serve.", foreground="#555").pack(anchor="w", pady=(0, 6))
+                          "dove serve. Doppio clic su un prezzo per cambiarlo.", foreground="#555").pack(anchor="w", pady=(0, 6))
 
         self.tot_doc = tk.StringVar(value="")
         self.tab_doc = TabellaEtichette(f, self._prezzo, self._testo_totale(self.tot_doc))
         self.tab_doc.pack(fill="both", expand=True)
+        self.tab_doc.on_prezzo = lambda a: self.prezzi_tondi(self.tab_doc, [a], modifica=True)
         self._pulsantiera(f, self.tab_doc, self.tot_doc,
                           lambda: self.doc_corrente or "documento")
         return f
@@ -303,6 +304,7 @@ class App:
         self.tot_ric = tk.StringVar(value="")
         self.tab_ric = TabellaEtichette(f, self._prezzo, self._testo_totale(self.tot_ric))
         self.tab_ric.pack(fill="both", expand=True)
+        self.tab_ric.on_prezzo = lambda a: self.prezzi_tondi(self.tab_ric, [a], modifica=True)
         self._pulsantiera(f, self.tab_ric, self.tot_ric, lambda: "articoli")
         return f
 
@@ -691,8 +693,10 @@ class App:
             messagebox.showerror(TITOLO, f"Impossibile aprire:\n{percorso}\n{e}")
 
     # ------------------------------------------------------------- prezzi tondi
-    def prezzi_tondi(self, tabella):
-        articoli = [a for a, _ in tabella.selezione()]
+    def prezzi_tondi(self, tabella, articoli=None, modifica=False):
+        """modifica=True: un solo articolo (doppio clic sul prezzo), si apre subito la richiesta del prezzo."""
+        if articoli is None:
+            articoli = [a for a, _ in tabella.selezione()]
         try:
             self._occupato("Leggo il listino da SAP...")
             dec = self._interroga(prezzi.decimali_prezzo)
@@ -703,7 +707,10 @@ class App:
             messagebox.showerror(TITOLO, f"Impossibile leggere il listino:\n{_messaggio(e)}")
             return
         self._libero()
-        FinestraPrezzi(self, tabella, articoli, dec, info)
+        f = FinestraPrezzi(self, tabella, articoli, dec, info)
+        if modifica and f.righe:
+            f.w.update_idletasks()
+            f.modifica_riga(next(iter(f.righe)))
 
     # ------------------------------------------------------- cartellini scaffale
     def stampa_cartellini(self, lista, nome_base, anteprima=False):
@@ -923,7 +930,11 @@ class FinestraPrezzi:
 
     def _modifica(self, evento):
         iid = self.tv.identify_row(evento.y)
-        if not iid or iid not in self.righe:
+        if iid:
+            self.modifica_riga(iid)
+
+    def modifica_riga(self, iid):
+        if iid not in self.righe:
             return
         r = self.righe[iid]
         from tkinter import simpledialog

@@ -34,6 +34,7 @@ class TabellaEtichette(ttk.Frame):
         super().__init__(parent)
         self.formatta_prezzo = formatta_prezzo
         self.on_change = on_change
+        self.on_prezzo = None   # doppio clic sul prezzo: on_prezzo(articolo)
         self.voci = []          # (articolo, IntVar spunta, StringVar quantita')
         self.scelte_bc = []     # (articolo, Combobox o None, Label prezzo)
 
@@ -99,8 +100,9 @@ class TabellaEtichette(ttk.Frame):
                 testo = self._testo_bc(barcodes[0]) if barcodes else (art["ean"] or "-")
                 cb = None
                 ttk.Label(self.tabella, text=testo).grid(row=r, column=3, sticky="w", padx=6)
-            lbl_prezzo = ttk.Label(self.tabella, text=self.formatta_prezzo(art) or "-")
+            lbl_prezzo = ttk.Label(self.tabella, text=self.formatta_prezzo(art) or "-", cursor="hand2")
             lbl_prezzo.grid(row=r, column=4, sticky="e", padx=6)
+            lbl_prezzo.bind("<Double-1>", lambda e, a=art: self.on_prezzo and self.on_prezzo(a))
             self.scelte_bc.append((art, cb, lbl_prezzo))
             ttk.Spinbox(self.tabella, from_=0, to=9999, width=6, textvariable=qta, justify="right",
                         command=self._cambiato).grid(row=r, column=5, padx=6, pady=2)
