@@ -23,6 +23,7 @@ import secrets
 import socket
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from decimal import Decimal, ROUND_HALF_UP
@@ -306,18 +307,14 @@ def _testo_errore_com(e):
     return str(e)
 
 
-def crea_conteggio_sap(sap_cfg, versione_sql, utente, password, righe, data_conteggio, note=""):
-    """
-    sap_cfg: sezione [sap] di config.ini (server, database, ...)
-    versione_sql: numero di versione principale di SQL Server (es. 15 = 2019)
-    righe: righe_ok di prepara_conteggio
-    Ritorna (DocEntry, DocNum).
-    """
+@contextmanager
+def sessione_di(sap_cfg, versione_sql, utente, password):
+    """Collegamento a SAP tramite DI API: 'with sessione_di(...) as (comp, constants):'."""
     try:
         import pythoncom
         from win32com.client import gencache, constants
     except ImportError:
-        raise ErroreSAP("La creazione del documento funziona solo su Windows con pywin32 installato.")
+        raise ErroreSAP("La scrittura in SAP funziona solo su Windows con pywin32 installato.")
 
     pythoncom.CoInitialize()
     try:
@@ -365,22 +362,7 @@ def crea_conteggio_sap(sap_cfg, versione_sql, utente, password, righe, data_cont
         if comp.Connect() != 0:
             raise ErroreSAP(f"Accesso a SAP non riuscito: {comp.GetLastErrorDescription()}")
         try:
-            svc = comp.GetCompanyService().GetBusinessService(constants.InventoryCountingsService)
-            doc = svc.GetDataInterface(constants.icsInventoryCounting)
-            doc.CountDate = data_conteggio
-            if note:
-                doc.Remarks = note[:250]
-            for r in righe:
-                riga = doc.InventoryCountingLines.Add()
-                riga.ItemCode = r["codice"]
-                riga.WarehouseCode = r["magazzino"]
-                riga.CountedQuantity = float(r["contato"])
-                riga.Counted = constants.tYES
-            try:
-                risultato = svc.Add(doc)
-            except Exception as e:
-                raise ErroreSAP(f"SAP ha rifiutato il documento: {_testo_errore_com(e)}")
-            return risultato.DocumentEntry, risultato.DocumentNumber
+            yield comp, constants
         finally:
             try:
                 comp.Disconnect()
@@ -388,6 +370,32 @@ def crea_conteggio_sap(sap_cfg, versione_sql, utente, password, righe, data_cont
                 pass
     finally:
         pythoncom.CoUninitialize()
+
+
+def crea_conteggio_sap(sap_cfg, versione_sql, utente, password, righe, data_conteggio, note=""):
+    """
+    sap_cfg: sezione [sap] di config.ini (server, database, ...)
+    versione_sql: numero di versione principale di SQL Server (es. 15 = 2019)
+    righe: righe_ok di prepara_conteggio
+    Ritorna (DocEntry, DocNum).
+    """
+    with sessione_di(sap_cfg, versione_sql, utente, password) as (comp, constants):
+        svc = comp.GetCompanyService().GetBusinessService(constants.InventoryCountingsService)
+        doc = svc.GetDataInterface(constants.icsInventoryCounting)
+        doc.CountDate = data_conteggio
+        if note:
+            doc.Remarks = note[:250]
+        for r in righe:
+            riga = doc.InventoryCountingLines.Add()
+            riga.ItemCode = r["codice"]
+            riga.WarehouseCode = r["magazzino"]
+            riga.CountedQuantity = float(r["contato"])
+            riga.Counted = constants.tYES
+        try:
+            risultato = svc.Add(doc)
+        except Exception as e:
+            raise ErroreSAP(f"SAP ha rifiutato il documento: {_testo_errore_com(e)}")
+        return risultato.DocumentEntry, risultato.DocumentNumber
 
 
 def versione_sql(conn):

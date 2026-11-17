@@ -191,6 +191,22 @@ class TabellaEtichette(ttk.Frame):
     def numero_righe(self):
         return len(self.voci)
 
+    def nuovo_prezzo_base(self, art, netto):
+        """Dopo un cambio di prezzo nel listino: aggiorna l'articolo e il prezzo mostrato.
+        I prezzi delle altre UM (confezioni) vengono ricalcolati con la stessa proporzione."""
+        vecchio = art.get("prezzo_base")
+        art["prezzo_base"] = netto
+        if vecchio:
+            rapporto = netto / vecchio
+            art["prezzi_um"] = {um: p * rapporto for um, p in (art.get("prezzi_um") or {}).items()}
+        attuale = next((b for b in art.get("barcodes") or [] if b[0] == art.get("ean")), None)
+        if attuale:
+            self._applica_bc(art, attuale)
+        else:
+            art["prezzo"] = netto
+        lbl = next((l for a, _, l in self.scelte_bc if a is art), None)
+        self._aggiorna_prezzo(art, lbl)
+
 
 def scegli_etichette(titolo, righe, formatta_prezzo, anteprima=None):
     """Finestra singola: restituisce [(articolo, qta)] da stampare oppure None se annullato."""

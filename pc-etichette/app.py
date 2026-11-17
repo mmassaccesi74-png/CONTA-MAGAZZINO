@@ -20,6 +20,8 @@ import sap_clabel as s
 import etichetta
 from finestra import TabellaEtichette, applica_stile
 import inventario
+import prezzi
+from decimal import Decimal
 
 TITOLO = "Etichette SAP B1"
 ICONA = os.path.join(s.SCRIPT_DIR, "etichette.ico")
@@ -132,7 +134,9 @@ class App:
                    ).pack(side="right", padx=6)
         riga2 = ttk.Frame(basso)
         riga2.pack(fill="x", pady=(6, 0))
-        ttk.Label(riga2, text="Cartellini prezzo da scaffale (uno per articolo spuntato):").pack(side="left")
+        ttk.Button(riga2, text="Prezzi tondi...",
+                   command=lambda: self.prezzi_tondi(tabella)).pack(side="left")
+        ttk.Label(riga2, text="Cartellini prezzo da scaffale (uno per articolo spuntato):").pack(side="left", padx=(18, 0))
         ttk.Button(riga2, text="Stampa cartellini", style="Stampa.TButton",
                    command=lambda: self.stampa_cartellini(tabella.selezione(), nome_base())).pack(side="right")
         ttk.Button(riga2, text="Anteprima cartellini",
@@ -686,6 +690,21 @@ class App:
         except (AttributeError, OSError) as e:
             messagebox.showerror(TITOLO, f"Impossibile aprire:\n{percorso}\n{e}")
 
+    # ------------------------------------------------------------- prezzi tondi
+    def prezzi_tondi(self, tabella):
+        articoli = [a for a, _ in tabella.selezione()]
+        try:
+            self._occupato("Leggo il listino da SAP...")
+            dec = self._interroga(prezzi.decimali_prezzo)
+            info = self._interroga(prezzi.info_listino, s.listino(self.cfg))
+            self._interroga(prezzi.costi, self.cfg, articoli)
+        except (Exception, SystemExit) as e:
+            self._libero("Errore di lettura da SAP.")
+            messagebox.showerror(TITOLO, f"Impossibile leggere il listino:\n{_messaggio(e)}")
+            return
+        self._libero()
+        FinestraPrezzi(self, tabella, articoli, dec, info)
+
     # ------------------------------------------------------- cartellini scaffale
     def stampa_cartellini(self, lista, nome_base, anteprima=False):
         if not lista:
@@ -780,6 +799,218 @@ class App:
             avviso = (f"  -  ATTENZIONE: formato nel driver {pag_w:.1f} x {pag_h:.1f} mm, "
                       f"etichetta {imp['larghezza_mm']:g} x {imp['altezza_mm']:g} mm")
         self._libero(f"Inviate {totale} etichette a {nome}.{avviso}")
+
+
+class FinestraPrezzi:
+    """Proposta di prezzi IVA inclusa tondi per gli articoli spuntati, scritti nel listino via DI API."""
+
+    COLONNE = ("codice", "descrizione", "iva", "attuale", "nuovo", "netto", "ricarico", "stato")
+    TITOLI = ("Codice", "Descrizione", "IVA", "Ivato attuale", "Ivato nuovo", "Nuovo netto", "Ricarico", "Stato")
+    LARGHEZZE = (110, 300, 50, 90, 90, 100, 70, 260)
+
+    def __init__(self, app, tabella, articoli, decimali, info_listino):
+        self.app, self.tabella, self.dec, self.info = app, tabella, decimali, info_listino
+        self.cfg = app.cfg
+        self.listino = s.listino(self.cfg)
+        self.righe = {}            # iid -> riga di proposta
+        self.da_costo = False
+        p = self.cfg["prezzi"] if self.cfg.has_section("prezzi") else {}
+        fattore = info_listino["fattore"]
+        try:
+            self.soglia = Decimal(str(p.get("soglia_ricarico", "")).replace(",", "."))
+        except Exception:
+            self.soglia = None
+        if not self.soglia:
+            self.soglia = (fattore - Decimal("0.1")) if fattore and fattore > 1 else Decimal("1.3")
+
+        w = self.w = tk.Toplevel(app.root)
+        w.title(f"Prezzi tondi - {info_listino['nome']} (listino {self.listino})")
+        w.geometry("1150x560")
+        w.transient(app.root)
+        alto = ttk.Frame(w, padding=10)
+        alto.pack(fill="x")
+        ttk.Label(alto, text="Prezzo al pubblico (IVA inclusa):").pack(side="left")
+        self.cb_metodo = ttk.Combobox(alto, state="readonly", width=16, values=list(prezzi.METODI))
+        self.cb_metodo.set(p.get("metodo", "") if p.get("metodo", "") in prezzi.METODI else "Ai 5 centesimi")
+        self.cb_metodo.pack(side="left", padx=6)
+        self.cb_dir = ttk.Combobox(alto, state="readonly", width=14, values=list(prezzi.DIREZIONI))
+        self.cb_dir.set(p.get("direzione", "") if p.get("direzione", "") in prezzi.DIREZIONI else "Per eccesso")
+        self.cb_dir.pack(side="left")
+        for cb in (self.cb_metodo, self.cb_dir):
+            cb.bind("<<ComboboxSelected>>", lambda e: self._ricalcola())
+        ttk.Button(alto, text=f"Articoli con ricarico sotto {self._num(self.soglia)}",
+                   command=self._ricarico_basso).pack(side="right")
+
+        ttk.Label(w, text="Doppio clic su una riga per scrivere un altro prezzo. Vengono aggiornate solo le righe "
+                          "'Da aggiornare'. I prezzi scritti diventano manuali in SAP: non seguono piu' il "
+                          "prezzo d'acquisto.", foreground="#555", padding=(10, 0), wraplength=1100,
+                  justify="left").pack(anchor="w")
+        cont = ttk.Frame(w, padding=(10, 6))
+        cont.pack(fill="both", expand=True)
+        self.tv = ttk.Treeview(cont, columns=self.COLONNE, show="headings", selectmode="extended")
+        for c, t, lg in zip(self.COLONNE, self.TITOLI, self.LARGHEZZE):
+            self.tv.heading(c, text=t)
+            self.tv.column(c, width=lg, stretch=(c in ("descrizione", "stato")),
+                           anchor="e" if c in ("iva", "attuale", "nuovo", "netto", "ricarico") else "w")
+        self.tv.tag_configure("ok", foreground="#1b6e2e")
+        self.tv.tag_configure("no", foreground="#8a4b00")
+        barra = ttk.Scrollbar(cont, orient="vertical", command=self.tv.yview)
+        self.tv.configure(yscrollcommand=barra.set)
+        self.tv.pack(side="left", fill="both", expand=True)
+        barra.pack(side="right", fill="y")
+        self.tv.bind("<Double-1>", self._modifica)
+        self.tv.bind("<Delete>", lambda e: self._togli())
+
+        basso = ttk.Frame(w, padding=10)
+        basso.pack(fill="x")
+        ttk.Button(basso, text="Togli righe selezionate", command=self._togli).pack(side="left")
+        self.info_var = tk.StringVar()
+        ttk.Label(basso, textvariable=self.info_var, style="Testa.TLabel").pack(side="left", padx=12)
+        ttk.Button(basso, text=f"Aggiorna listino {self.listino} in SAP", style="Stampa.TButton",
+                   command=self._aggiorna).pack(side="right")
+        self.e_pw = ttk.Entry(basso, width=14, show="*")
+        self.e_pw.pack(side="right", padx=(4, 10))
+        ttk.Label(basso, text="Password:").pack(side="right")
+        self.e_ut = ttk.Entry(basso, width=12)
+        self.e_ut.insert(0, self.cfg["sap"].get("utente_sap", "") if self.cfg.has_section("sap") else "")
+        self.e_ut.pack(side="right", padx=(4, 10))
+        ttk.Label(basso, text="Utente SAP:").pack(side="right")
+
+        self.articoli = articoli
+        self._ricalcola()
+        if not articoli:
+            self.info_var.set("Nessun articolo spuntato: spunta gli articoli nella tabella, "
+                              "oppure cerca quelli con ricarico basso.")
+
+    @staticmethod
+    def _num(d):
+        return App._num(Decimal(str(d)))
+
+    def _metodo(self):
+        return self.cb_metodo.get(), prezzi.DIREZIONI[self.cb_dir.get()]
+
+    def _ricalcola(self):
+        metodo, direzione = self._metodo()
+        if self.da_costo:
+            righe = [prezzi.proposta_da_costo(a, self.cfg, self.info["fattore"], metodo, direzione, self.dec)
+                     for a in self.articoli]
+        else:
+            righe = [prezzi.proposta(a, self.cfg, metodo, direzione, self.dec) for a in self.articoli]
+        self.tv.delete(*self.tv.get_children())
+        self.righe = {}
+        for r in righe:
+            self.righe[self.tv.insert("", "end")] = r
+        self._mostra()
+
+    def _mostra(self):
+        euro = lambda v: s.formatta_importo(v, self.cfg) if v is not None else "-"
+        da_fare = 0
+        for iid, r in self.righe.items():
+            if not self.tv.exists(iid):
+                continue
+            ok = r["stato"] == "Da aggiornare"
+            da_fare += ok
+            costo = r.get("costo")
+            ricarico = r.get("ricarico") or (r["netto"] / costo if costo and r["netto"] else None)
+            self.tv.item(iid, values=(r["codice"], r["descrizione"][:60], prezzi._it(r["iva"]) + "%",
+                                      euro(r["lordo"]), euro(r["nuovo"]),
+                                      prezzi._it(r["nuovo_netto"])
+                                      if r["nuovo_netto"] and r["stato"] != "Gia' tondo" else "-",
+                                      self._num(Decimal(str(ricarico)).quantize(Decimal("0.01"))) if ricarico else "",
+                                      r["stato"]),
+                         tags=("ok" if ok else "no",))
+        self.info_var.set(f"{da_fare} prezzi da aggiornare su {len(self.tv.get_children())} righe.")
+
+    def _modifica(self, evento):
+        iid = self.tv.identify_row(evento.y)
+        if not iid or iid not in self.righe:
+            return
+        r = self.righe[iid]
+        from tkinter import simpledialog
+        attuale = prezzi._it(r["nuovo"]) if r["nuovo"] is not None else ""
+        testo = simpledialog.askstring(TITOLO, f"{r['codice']} - {r['descrizione'][:50]}\n\n"
+                                               "Prezzo al pubblico IVA inclusa:", initialvalue=attuale, parent=self.w)
+        if testo is None:
+            return
+        t = testo.replace("€", "").replace(" ", "").strip()
+        if "," in t:
+            t = t.replace(".", "").replace(",", ".")
+        try:
+            valore = Decimal(t)
+        except Exception:
+            messagebox.showwarning(TITOLO, "Scrivi un prezzo, ad esempio 4,50.", parent=self.w)
+            return
+        prezzi.imposta_nuovo(r, valore, self.dec)
+        self._mostra()
+
+    def _togli(self):
+        for iid in self.tv.selection():
+            self.tv.delete(iid)
+            self.righe.pop(iid, None)
+        self._mostra()
+
+    def _ricarico_basso(self):
+        try:
+            self.app._occupato("Cerco gli articoli con prezzo manuale e ricarico basso...")
+            trovati = self.app._interroga(prezzi.ricarico_basso, self.cfg, self.soglia)
+            self.app._interroga(s.barcode_articoli, trovati)
+            self.app._interroga(s.prezzi_um, self.cfg, trovati)
+        except (Exception, SystemExit) as e:
+            self.app._libero("Errore di lettura da SAP.")
+            messagebox.showerror(TITOLO, f"Ricerca non riuscita:\n{_messaggio(e)}", parent=self.w)
+            return
+        self.app._libero(f"Articoli con ricarico sotto {self._num(self.soglia)}: {len(trovati)}.")
+        if not trovati:
+            messagebox.showinfo(TITOLO, f"Nessun articolo con prezzo manuale e ricarico sotto {self._num(self.soglia)}.",
+                                parent=self.w)
+            return
+        self.articoli, self.da_costo = trovati, True
+        self._ricalcola()
+        self.info_var.set(self.info_var.get() + f"  Proposta: costo x {self._num(self.info['fattore'] or 1)}, "
+                                                "poi arrotondato.")
+
+    def _aggiorna(self):
+        righe = [r for iid, r in self.righe.items() if self.tv.exists(iid) and r["stato"] == "Da aggiornare"]
+        if not righe:
+            messagebox.showinfo(TITOLO, "Nessun prezzo da aggiornare.", parent=self.w)
+            return
+        utente, pw = self.e_ut.get().strip(), self.e_pw.get()
+        if not utente or not pw:
+            messagebox.showwarning(TITOLO, "Inserisci utente e password con cui entri in SAP.", parent=self.w)
+            return
+        if not messagebox.askyesno(TITOLO, f"Aggiornare {len(righe)} prezzi nel listino {self.listino} "
+                                           f"({self.info['nome']})?\n\nCambiano anche in cassa e nei documenti. "
+                                           "I prezzi diventano manuali: non seguono piu' il prezzo d'acquisto.",
+                                   parent=self.w):
+            return
+        self.app._occupato(f"Mi collego a SAP e aggiorno {len(righe)} prezzi...")
+        try:
+            ver = inventario.versione_sql(self.app._db())
+            fatte, errori = prezzi.aggiorna_listino(self.cfg["sap"], ver, utente, pw, self.listino, righe)
+        except (Exception, SystemExit) as e:
+            self.app._libero("Prezzi non aggiornati.")
+            messagebox.showerror(TITOLO, f"Prezzi non aggiornati:\n{_messaggio(e)}", parent=self.w)
+            return
+        finally:
+            self.e_pw.delete(0, "end")
+        self.app._salva_config("sap", "utente_sap", utente)
+        self.app._salva_config("prezzi", "metodo", self.cb_metodo.get())
+        self.app._salva_config("prezzi", "direzione", self.cb_dir.get())
+        prezzi.registra(self.app._cartella_export(), self.listino, utente, fatte)
+        for r in fatte:
+            r["netto"], r["lordo"] = r["nuovo_netto"], r["nuovo"]
+            r["stato"] = "Aggiornato in SAP"
+            if any(a is r["art"] for a, _, _ in self.tabella.voci):
+                self.tabella.nuovo_prezzo_base(r["art"], r["nuovo_netto"])
+        for r, motivo in errori:
+            r["stato"] = f"Non aggiornato: {motivo}"[:200]
+        self._mostra()
+        self.app._libero(f"Aggiornati {len(fatte)} prezzi nel listino {self.listino}.")
+        testo = f"Aggiornati {len(fatte)} prezzi nel listino {self.listino}."
+        if errori:
+            testo += f"\n\n{len(errori)} non aggiornati: il motivo e' nella colonna Stato."
+        testo += "\n\nI prezzi nella tabella delle etichette sono gia' quelli nuovi: puoi stampare i cartellini."
+        messagebox.showinfo(TITOLO, testo, parent=self.w)
 
 
 def main():
