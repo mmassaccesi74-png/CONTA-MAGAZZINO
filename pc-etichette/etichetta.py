@@ -273,6 +273,86 @@ def disegna_etichetta(dati, impostazioni):
 
 
 # --------------------------------------------------------------------------
+# Cartellino prezzo da scaffale
+# --------------------------------------------------------------------------
+def disegna_cartellino(dati, impostazioni):
+    """
+    Cartellino da scaffale: intestazione (nome del negozio + codice articolo),
+    descrizione, prezzo grande, prezzo per unita' di misura e codice a barre.
+    dati: dict con codice, descrizione, ean, prezzo_testo, unitario_testo, negozio
+    impostazioni: dict con larghezza_mm, altezza_mm, dpi, margine_mm, barcode_codice_se_manca_ean
+    """
+    from PIL import Image, ImageDraw
+
+    dpm = impostazioni["dpi"] / 25.4
+    W = int(round(impostazioni["larghezza_mm"] * dpm))
+    H = int(round(impostazioni["altezza_mm"] * dpm))
+    m = int(round(impostazioni["margine_mm"] * dpm))
+    img = Image.new("L", (W, H), 255)
+    d = ImageDraw.Draw(img)
+    area_w, area_h = W - 2 * m, H - 2 * m
+
+    # 1) intestazione: nome del negozio a sinistra, codice articolo a destra, linea sotto
+    h_testa = max(int(4.0 * dpm), int(area_h * 0.15))
+    y = m
+    larg_cod = 0
+    if dati.get("codice"):
+        fc, rc, pxc = _adatta_testo(d, dati["codice"], area_w * 0.45, h_testa, 1, False, min_px=int(2.0 * dpm))
+        larg_cod = _larghezza(d, rc[0], fc)
+        d.text((W - m - larg_cod, y + (h_testa - pxc * 1.15) / 2), rc[0], font=fc, fill=0)
+    spazio_testa = area_w - larg_cod - int(2 * dpm)
+    if dati.get("negozio"):
+        fn, rn, pxn = _adatta_testo(d, dati["negozio"], spazio_testa, h_testa, 1, True, min_px=int(2.0 * dpm))
+        d.text((m, y + (h_testa - pxn * 1.15) / 2), rn[0], font=fn, fill=0)
+    y += h_testa + int(0.6 * dpm)
+    d.rectangle([m, y, W - m - 1, y + max(1, int(0.25 * dpm)) - 1], fill=0)
+    y += int(1.0 * dpm)
+
+    # 2) descrizione: fino a 2 righe in grassetto
+    h_desc = int(area_h * 0.25)
+    font, righe, px = _adatta_testo(d, dati.get("descrizione") or "", area_w, h_desc, 2, True,
+                                    min_px=min(int(2.4 * dpm), int(h_desc / 2 / 1.15)))
+    yy = y
+    for r in righe:
+        d.text((m, yy), r, font=font, fill=0)
+        yy += int(px * 1.15)
+    y += h_desc
+
+    # 3) parte bassa: codice a barre a sinistra, prezzo grande e prezzo unitario a destra
+    h_basso = H - m - y
+    valore_bc = dati.get("ean") or (dati.get("codice") if impostazioni.get("barcode_codice_se_manca_ean", True) else "")
+    codice_bc = codifica_barcode(valore_bc)
+    if codice_bc:
+        # spazio minimo per barre leggibili: 2 punti per modulo piu' la zona di rispetto
+        w_bc = min(int(area_w * 0.55), (len(codice_bc[1]) + 12) * 2)
+        if w_bc < len(codice_bc[1]) + 12:          # non ci sta nemmeno a 1 punto: niente codice
+            codice_bc, w_bc = None, 0
+    else:
+        w_bc = 0
+    x_prezzo = m + w_bc + (int(2 * dpm) if w_bc else 0)
+    w_prezzo = W - m - x_prezzo
+
+    unitario = dati.get("unitario_testo") or ""
+    h_unit = int(h_basso * 0.24) if unitario else 0
+    h_prezzo = h_basso - h_unit
+    if dati.get("prezzo_testo"):
+        fp, rp, pxp = _adatta_testo(d, dati["prezzo_testo"], w_prezzo, h_prezzo, 1, True)
+        lp = _larghezza(d, rp[0], fp)
+        d.text((W - m - lp, y + (h_prezzo - pxp * 1.15) / 2), rp[0], font=fp, fill=0)
+    if unitario:
+        fu, ru, pxu = _adatta_testo(d, unitario, w_prezzo, h_unit, 1, False, min_px=int(1.8 * dpm))
+        lu = _larghezza(d, ru[0], fu)
+        d.text((W - m - lu, y + h_prezzo + (h_unit - pxu * 1.15) / 2), ru[0], font=fu, fill=0)
+    if codice_bc:
+        cifre_h = max(int(2.0 * dpm), int(h_basso * 0.18))
+        h_barre = min(h_basso - cifre_h - 2, int(12 * dpm))
+        y_bc = y + (h_basso - h_barre - cifre_h - 2) // 2
+        _disegna_barcode(d, codice_bc, m, y_bc, w_bc, h_barre, cifre_h)
+
+    return img.point(lambda p: 0 if p < 128 else 255, "1")
+
+
+# --------------------------------------------------------------------------
 # Stampa su Windows
 # --------------------------------------------------------------------------
 def _win32():

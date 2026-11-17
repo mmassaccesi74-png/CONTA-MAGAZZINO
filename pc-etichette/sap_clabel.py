@@ -27,6 +27,7 @@ Configurazione: config.ini nella stessa cartella dello script.
 import argparse
 import configparser
 import os
+import re
 import sys
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -380,15 +381,34 @@ def perc(valore):
     return f"{v:f}".replace(".", ",") + "%"
 
 
+def prezzo_lordo(art, cfg):
+    """Prezzo di vendita IVA inclusa, non arrotondato (None se l'articolo non ha prezzo)."""
+    prezzo = art.get("prezzo")
+    if prezzo is None:
+        return None
+    iva = aliquota(art, cfg)
+    valore = Decimal(str(prezzo))
+    if iva > 0:
+        valore = valore * (Decimal(1) + iva / Decimal(100))
+    return valore
+
+
+def formatta_importo(valore, cfg):
+    e = cfg["etichette"] if cfg.has_section("etichette") else {}
+    valore = Decimal(str(valore)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    testo = f"{valore:,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
+    simbolo = e.get("simbolo_valuta", "€")
+    if not simbolo:
+        return testo
+    return f"{simbolo} {testo}" if e.get("simbolo_prima", "si").lower() in ("si", "sì", "yes", "1", "true") else f"{testo} {simbolo}"
+
+
 def formatta_prezzo(art, cfg):
     prezzo = art.get("prezzo")
     if prezzo is None:
         return ""
     e = cfg["etichette"] if cfg.has_section("etichette") else {}
-    iva = aliquota(art, cfg)
-    valore = Decimal(str(prezzo))
-    if iva > 0:
-        valore = valore * (Decimal(1) + iva / Decimal(100))
+    valore = prezzo_lordo(art, cfg)
     valore = valore.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     testo = f"{valore:,.2f}".replace(",", "#").replace(".", ",").replace("#", ".")
     simbolo = e.get("simbolo_valuta", "€")
@@ -491,6 +511,136 @@ def prepara_lavori(articoli_con_qta, cfg, imp):
         }
         indice[chiave] = len(lavori)
         lavori.append((etichetta.disegna_etichetta(dati, imp), qta))
+    return lavori
+
+
+# --------------------------------------------------------------------------
+# Cartellini prezzo da scaffale
+# --------------------------------------------------------------------------
+def impostazioni_cartellino(cfg):
+    """Sezione [cartellino] di config.ini (rotolo per i cartellini sulla stessa Toshiba)."""
+    c = cfg["cartellino"] if cfg.has_section("cartellino") else {}
+    s = cfg["stampante"] if cfg.has_section("stampante") else {}
+    num = lambda k, d: float(str(c.get(k, d)).replace(",", "."))
+    return {
+        "stampante": c.get("stampante", "").strip(),
+        "larghezza_mm": num("larghezza_mm", "65"),
+        "altezza_mm": num("altezza_mm", "40"),
+        "dpi": int(float(str(c.get("dpi", s.get("dpi", "203"))).replace(",", "."))),
+        "margine_mm": num("margine_mm", "1.5"),
+        "nome_negozio": c.get("nome_negozio", "").strip(),
+        "prezzo_unitario": c.get("prezzo_unitario", "auto").strip().lower(),
+        "campo_quantita": c.get("campo_quantita", "").strip(),
+        "campo_unita": c.get("campo_unita", "").strip(),
+        "barcode_codice_se_manca_ean": str(s.get("barcode_codice_se_manca_ean", "si")).strip().lower()
+                                       in ("si", "sì", "yes", "1", "true"),
+        "centra": str(s.get("centra_su_pagina", "si")).strip().lower() in ("si", "sì", "yes", "1", "true"),
+        "sposta_x_mm": num("sposta_x_mm", "0"),
+        "sposta_y_mm": num("sposta_y_mm", "0"),
+    }
+
+
+# Contenuto netto dai dati di vendita dell'anagrafica (scheda Dati di vendita):
+# peso (SWeight1, unita' in OWGT) e volume (SVolume, unita' di lunghezza al cubo in OLGT),
+# riferiti all'unita' di vendita (NumInSale articoli).
+SQL_CONTENUTO = """
+SELECT T0.ItemCode, T0.SWeight1, W.WightInMG, T0.SVolume, L.SizeInMM, T0.NumInSale
+FROM OITM T0
+LEFT JOIN OWGT W ON W.UnitCode = T0.SWght1Unit
+LEFT JOIN OLGT L ON L.UnitCode = T0.SVolUnit
+WHERE T0.ItemCode IN ({segnaposto})
+"""
+
+SQL_CONTENUTO_CAMPI = "SELECT T0.ItemCode, T0.{quantita}, T0.{unita} FROM OITM T0 WHERE T0.ItemCode IN ({segnaposto})"
+
+# unita' scritte nei campi utente -> (unita' del prezzo, fattore verso di essa)
+_UNITA_CAMPO = {
+    "kg": ("kg", 1), "g": ("kg", Decimal("0.001")), "gr": ("kg", Decimal("0.001")), "hg": ("kg", Decimal("0.1")),
+    "l": ("litro", 1), "lt": ("litro", 1), "litri": ("litro", 1), "ml": ("litro", Decimal("0.001")),
+    "cl": ("litro", Decimal("0.01")), "dl": ("litro", Decimal("0.1")),
+    "m": ("metro", 1), "mt": ("metro", 1), "cm": ("metro", Decimal("0.01")),
+    "pz": ("pezzo", 1), "n": ("pezzo", 1), "nr": ("pezzo", 1),
+}
+
+
+def contenuti(conn, articoli, imp):
+    """Aggiunge a ogni articolo 'contenuto' = (quantita', unita') per il prezzo unitario, se si ricava."""
+    modo = imp["prezzo_unitario"]
+    codici = sorted({a["codice"] for a in articoli})
+    trovati = {}
+    if modo not in ("no", "") and codici:
+        cur = conn.cursor()
+        try:
+            for i in range(0, len(codici), 500):
+                blocco = codici[i:i + 500]
+                seg = ",".join("?" for _ in blocco)
+                if imp["campo_quantita"] and imp["campo_unita"]:
+                    nomi = [imp["campo_quantita"], imp["campo_unita"]]
+                    if not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n) for n in nomi):
+                        raise ValueError("nomi dei campi non validi")
+                    cur.execute(SQL_CONTENUTO_CAMPI.format(quantita=nomi[0], unita=nomi[1], segnaposto=seg), blocco)
+                    for item, q, um in cur.fetchall():
+                        unita = _UNITA_CAMPO.get(str(um or "").strip().lower().rstrip("."))
+                        if q and unita and Decimal(str(q)) > 0:
+                            trovati[item.upper()] = (Decimal(str(q)) * Decimal(str(unita[1])), unita[0])
+                    continue
+                cur.execute(SQL_CONTENUTO.format(segnaposto=seg), blocco)
+                for item, peso, mg, volume, mm, per_vendita in cur.fetchall():
+                    n = Decimal(str(per_vendita)) if per_vendita and Decimal(str(per_vendita)) > 0 else Decimal(1)
+                    litri = kg = None
+                    if volume and mm and Decimal(str(volume)) > 0:
+                        litri = Decimal(str(volume)) * (Decimal(str(mm)) / 100) ** 3 / n
+                    if peso and mg and Decimal(str(peso)) > 0:
+                        kg = Decimal(str(peso)) * Decimal(str(mg)) / Decimal(1000000) / n
+                    if modo == "peso":
+                        litri = None
+                    elif modo == "volume":
+                        kg = None
+                    if litri:
+                        trovati[item.upper()] = (litri, "litro")
+                    elif kg:
+                        trovati[item.upper()] = (kg, "kg")
+        except Exception:
+            trovati = {}       # campi assenti in questa versione di SAP: niente prezzo unitario
+    for a in articoli:
+        a["contenuto"] = trovati.get(a["codice"].upper())
+    return articoli
+
+
+def testo_unitario(art, cfg):
+    """'€ 12,50 al kg' dal prezzo e dal contenuto netto; vuoto se non si ricava o non serve."""
+    c = art.get("contenuto")
+    lordo = prezzo_lordo(art, cfg)
+    if not c or lordo is None or art.get("um_etichetta"):
+        return ""          # con un codice a barre di un'altra UM (es. confezione) il contenuto non vale
+    quantita, unita = c
+    if quantita <= 0 or quantita == 1:
+        return ""          # il prezzo e' gia' quello di 1 kg / 1 litro / 1 pezzo
+    return f"{formatta_importo(lordo / quantita, cfg)} al {unita}"
+
+
+def prepara_cartellini(articoli_con_qta, cfg, imp, negozio=""):
+    """Un cartellino per articolo/codice a barre (le copie restano quelle indicate)."""
+    import etichetta
+    lavori, indice = [], {}
+    for art, qta in articoli_con_qta:
+        if qta <= 0:
+            continue
+        chiave = (art["codice"], art["ean"])
+        if chiave in indice:
+            img, q = lavori[indice[chiave]]
+            lavori[indice[chiave]] = (img, q + qta)
+            continue
+        dati = {
+            "codice": art["codice"],
+            "descrizione": art["descrizione"],
+            "ean": art["ean"],
+            "prezzo_testo": formatta_prezzo(art, cfg),
+            "unitario_testo": testo_unitario(art, cfg),
+            "negozio": imp["nome_negozio"] or negozio,
+        }
+        indice[chiave] = len(lavori)
+        lavori.append((etichetta.disegna_cartellino(dati, imp), qta))
     return lavori
 
 

@@ -130,6 +130,14 @@ class App:
         ttk.Button(riga, text="Anteprima PDF",
                    command=lambda: self.stampa(tabella.selezione(), nome_base(), anteprima=True)
                    ).pack(side="right", padx=6)
+        riga2 = ttk.Frame(basso)
+        riga2.pack(fill="x", pady=(6, 0))
+        ttk.Label(riga2, text="Cartellini prezzo da scaffale (uno per articolo spuntato):").pack(side="left")
+        ttk.Button(riga2, text="Stampa cartellini", style="Stampa.TButton",
+                   command=lambda: self.stampa_cartellini(tabella.selezione(), nome_base())).pack(side="right")
+        ttk.Button(riga2, text="Anteprima cartellini",
+                   command=lambda: self.stampa_cartellini(tabella.selezione(), nome_base(), anteprima=True)
+                   ).pack(side="right", padx=6)
 
     # ------------------------------------------------- codici a barre per UM
     def _um_preferita(self):
@@ -677,6 +685,64 @@ class App:
             os.startfile(percorso)
         except (AttributeError, OSError) as e:
             messagebox.showerror(TITOLO, f"Impossibile aprire:\n{percorso}\n{e}")
+
+    # ------------------------------------------------------- cartellini scaffale
+    def stampa_cartellini(self, lista, nome_base, anteprima=False):
+        if not lista:
+            messagebox.showinfo(TITOLO, "Nessun articolo selezionato.")
+            return
+        articoli = [a for a, _ in lista]
+        imp = s.impostazioni_cartellino(self.cfg)
+        try:
+            self._occupato("Preparo i cartellini...")
+            negozio = ""
+            if not imp["nome_negozio"]:
+                negozio = self._interroga(self._nome_azienda)
+            self._interroga(s.contenuti, articoli, imp)
+            lavori = s.prepara_cartellini([(a, 1) for a in articoli], self.cfg, imp, negozio)
+            if anteprima:
+                percorso = os.path.join(self._cartella_export(),
+                                        f"cartellini_{nome_base}_{datetime.now():%Y%m%d_%H%M%S}.pdf")
+                etichetta.salva_anteprima(lavori, percorso, imp["dpi"])
+                self._libero(f"Anteprima cartellini creata: {percorso}")
+                self._apri(percorso)
+                return
+            nome = etichetta.scegli_stampante(imp["stampante"] or self.cb_stampante.get()
+                                              or s.impostazioni_etichetta(self.cfg)["nome"])
+            self._libero()
+            # il rotolo dei cartellini e' diverso da quello delle etichette: il formato nel driver deve coincidere
+            try:
+                pag_w, pag_h, _ = etichetta.info_pagina(nome)
+            except Exception:
+                pag_w = pag_h = None
+            if pag_h is not None and (pag_w < imp["larghezza_mm"] - 1 or abs(pag_h - imp["altezza_mm"]) > 1):
+                if not messagebox.askyesno(
+                        TITOLO, f"Nel driver di {nome} il formato carta e' {pag_w:.0f} x {pag_h:.0f} mm, "
+                                f"il cartellino e' {imp['larghezza_mm']:g} x {imp['altezza_mm']:g} mm.\n\n"
+                                "Hai messo il rotolo dei cartellini e impostato il formato nel driver "
+                                "(Preferenze stampa > Formato carta)?\n\nStampare lo stesso?"):
+                    self.stato.set("Stampa cartellini annullata.")
+                    return
+            elif len(lavori) > 1 and not messagebox.askyesno(
+                    TITOLO, f"Stampare {len(lavori)} cartellini su\n{nome}?\n\n"
+                            "Controlla che nella stampante ci sia il rotolo dei cartellini."):
+                self.stato.set("Stampa cartellini annullata.")
+                return
+            self._occupato(f"Invio {len(lavori)} cartellini a {nome}...")
+            etichetta.stampa(lavori, nome, imp["dpi"], f"Cartellini SAP - {nome_base}",
+                             centra=imp["centra"], sposta_x_mm=imp["sposta_x_mm"], sposta_y_mm=imp["sposta_y_mm"])
+        except (Exception, SystemExit) as e:
+            self._libero("Errore di stampa.")
+            messagebox.showerror(TITOLO, f"Cartellini non stampati:\n{_messaggio(e)}")
+            return
+        self._libero(f"Inviati {len(lavori)} cartellini a {nome}.")
+
+    @staticmethod
+    def _nome_azienda(conn):
+        cur = conn.cursor()
+        cur.execute("SELECT CompnyName FROM OADM")
+        r = cur.fetchone()
+        return (r[0] if r else "") or ""
 
     # ------------------------------------------------------------------ stampa
     def stampa(self, lista, nome_base, anteprima=False):
