@@ -11,6 +11,7 @@ inventario.py - Inventario con il telefono.
 
 4) avvia_ricezione(): finche' il programma e' aperto, i telefoni sul Wi-Fi aziendale scaricano
    l'anagrafica e inviano il conteggio direttamente (porta 8766, codice di accesso).
+   Sulla stessa porta risponde anche l'app Etichette SAP (vedi etichette_rete.py).
 
 Le letture usano la stessa connessione di sola lettura del resto del programma.
 La scrittura passa solo dalla DI API di SAP (mai scritture dirette nel database).
@@ -504,9 +505,11 @@ def archivia(cartella, percorso):
         return False
 
 
-def avvia_ricezione(cartella, codice, avvisa, porta=PORTA):
+def avvia_ricezione(cartella, codice, avvisa, porta=PORTA, extra=None):
     """Avvia in sottofondo il servizio che riceve dai telefoni.
     avvisa(percorso) viene chiamata (da un altro thread) a ogni conteggio ricevuto.
+    extra: servizio aggiuntivo sulla stessa porta e con lo stesso codice (es. etichette_rete.ServizioEtichette),
+           con i metodi get(percorso, query) e post(percorso, dati) che ritornano (stato, risposta) o None.
     Ritorna il server (server.shutdown() per fermarlo)."""
     cache = {"mtime": None, "parti": None}
     blocco = threading.Lock()
@@ -573,9 +576,14 @@ def avvia_ricezione(cartella, codice, avvisa, porta=PORTA):
         def do_GET(self):
             if not self._autorizzato():
                 return
-            percorso = self.path.split("?")[0].rstrip("/")
+            percorso, _, query = self.path.partition("?")
+            percorso = percorso.rstrip("/")
             if percorso == "/ping":
-                return self._rispondi(200, {"ok": True, "programma": "inventario-sap"})
+                return self._rispondi(200, {"ok": True, "programma": "inventario-sap", "etichette": extra is not None})
+            if extra is not None:
+                esito = extra.get(percorso, query)
+                if esito is not None:
+                    return self._rispondi(*esito)
             m = re.fullmatch(r"/anagrafica/(\d+)", percorso)
             if m:
                 try:
@@ -597,7 +605,16 @@ def avvia_ricezione(cartella, codice, avvisa, porta=PORTA):
                 self.close_connection = True
             if not self._autorizzato():
                 return
-            if self.path.split("?")[0].rstrip("/") != "/conteggio":
+            percorso = self.path.split("?")[0].rstrip("/")
+            if extra is not None and percorso.startswith("/etichette/"):
+                try:
+                    dati = json.loads(corpo.decode("utf-8"))
+                except ValueError:
+                    return self._rispondi(400, {"errore": "Richiesta non valida."})
+                esito = extra.post(percorso, dati)
+                if esito is not None:
+                    return self._rispondi(*esito)
+            if percorso != "/conteggio":
                 return self._rispondi(404, {"errore": "Richiesta non riconosciuta."})
             try:
                 dati = json.loads(corpo.decode("utf-8"))

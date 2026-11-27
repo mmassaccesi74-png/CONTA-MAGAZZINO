@@ -6,3 +6,5 @@ app-acquisti/*.apk
 __pycache__/
 .DS_Store
 pc-acquisti/export/
+app-etichette/build.log
+app-etichette/*.apk

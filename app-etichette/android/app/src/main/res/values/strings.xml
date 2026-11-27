@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Etichette SAP</string>
+    <string name="title_activity_main">Etichette SAP</string>
+    <string name="package_name">it.contamagazzino.etichette</string>
+    <string name="custom_url_scheme">it.contamagazzino.etichette</string>
+</resources>

@@ -1,0 +1,14 @@
+{
+  "name": "etichette-sap-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App Android per stampare le etichette prodotto da SAP Business One",
+  "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "8.2.2",
+    "@capacitor/android": "8.4.3",
+    "@capacitor/core": "8.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.4.3"
+  }
+}

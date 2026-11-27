@@ -1,0 +1,11 @@
+{
+  "appId": "it.contamagazzino.etichette",
+  "appName": "Etichette SAP",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  },
+  "server": {
+    "cleartext": true
+  }
+}

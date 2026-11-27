@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Etichette SAP</title>
+<style>
+/* Stessa impostazione di Conta Magazzino e Acquisti Magazzino (una colonna, schede in basso),
+   con il viola: le tre app si distinguono a colpo d'occhio. */
+:root{
+  --bg:#f3f2f6; --surface:#ffffff; --ink:#1d1b22; --muted:#625d6b; --line:#d9d5e0;
+  --accent:#6b3fa0; --accent-ink:#ffffff; --ok:#2b7a3d; --warn:#b26a00; --bad:#b3261e; --chip:#ebe7f0;
+  --f-ui:Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-code:"Roboto Mono","Droid Sans Mono",ui-monospace,monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#141218; --surface:#1e1b24; --ink:#ebe7f0; --muted:#a39dad; --line:#36313f;
+  --accent:#b996ee; --accent-ink:#1d0f33; --ok:#6cc985; --warn:#f0b04a; --bad:#ff8a80; --chip:#2b2733; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:16px;line-height:1.4;
+  padding-top:env(safe-area-inset-top,0px);-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+.app{display:flex;flex-direction:column;min-height:100vh;max-width:720px;margin:0 auto}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);padding-block:10px}
+.top-row{display:flex;gap:10px;align-items:center}
+.brand{font-weight:700;font-size:15px;margin-right:auto;white-space:nowrap}
+.sess{font-size:13px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+label.f{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+select,input[type=text],input[type=number],input[type=search]{font:inherit;font-size:16px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0;width:100%}
+select:focus,input:focus,button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:1px}
+main{flex:1;padding-block:14px 100px;display:flex;flex-direction:column;gap:14px}
+.tabp{display:flex;flex-direction:column;gap:12px}
+.banner{border-radius:var(--r);padding:10px 12px;font-size:14px;background:var(--chip);margin-bottom:8px}
+.banner.warn{background:color-mix(in srgb,var(--warn) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent)}
+.banner.ok{background:color-mix(in srgb,var(--ok) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+.scan{display:flex;gap:8px}
+.scan input{font-size:18px;padding:14px 12px;flex:1}
+button{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;min-height:46px}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.big{min-height:58px;font-size:18px;width:100%}
+button.link{border:0;background:transparent;color:var(--accent);padding:4px 0;min-height:36px;text-align:left}
+button.danger{border-color:var(--bad);color:var(--bad)}
+button:disabled{opacity:.45}
+.cam-btn{display:flex;align-items:center;justify-content:center;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 auto;min-width:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:14px;padding:8px 14px;border-radius:999px;background:var(--chip);min-height:auto}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.g{display:grid;gap:10px}
+.code{font-family:var(--f-code);font-weight:600;font-size:18px;overflow-wrap:anywhere}
+.prezzo{font-size:26px;font-weight:700}
+.meta{display:flex;gap:6px;flex-wrap:wrap;font-size:13px;color:var(--muted);align-items:center}
+.tag{font-family:var(--f-code);font-size:12px;padding:2px 7px;border-radius:5px;background:var(--chip);color:var(--ink)}
+.tag.warn{background:color-mix(in srgb,var(--warn) 24%,var(--surface))}
+.qty{display:grid;grid-template-columns:60px 1fr 60px;gap:8px}
+.qty input{text-align:center;font-family:var(--f-code);font-size:26px;font-weight:600;padding:8px}
+.qty button{font-size:26px;padding:0}
+.list{display:flex;flex-direction:column}
+.item{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center}
+.item:last-child{border-bottom:0}
+.item.chk{grid-template-columns:auto 1fr auto}
+.item.chk .c,.item.chk .d{grid-column:2}
+.item.chk .q{grid-column:3}
+.item.chk .ck{grid-row:1/3;grid-column:1}
+.ck input{width:26px;height:26px;margin:0}
+label.opt{display:flex;gap:12px;align-items:flex-start}
+label.opt input{flex:none;width:22px;height:22px;margin:1px 0 0}
+.item .c{font-family:var(--f-code);font-weight:600;font-size:15px;min-width:0;overflow-wrap:anywhere}
+.item .d{font-size:14px;color:var(--muted);min-width:0}
+.item .q{grid-row:1/3;grid-column:2;display:flex;align-items:center;gap:6px}
+.item .q input{width:72px;text-align:right;font-family:var(--f-code);padding:8px}
+.item .q button{min-height:42px;padding:6px 12px}
+.item select{margin-top:4px;padding:6px 8px;font-size:14px}
+.item.tap{cursor:pointer}
+.item.off .c,.item.off .d{opacity:.45}
+h2{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 0}
+.empty{padding:22px 4px;color:var(--muted);text-align:center;font-size:15px}
+.small{font-size:13px;color:var(--muted)}
+.anteprima{display:flex;justify-content:center;background:#fff;border:1px dashed var(--line);border-radius:8px;padding:8px;min-height:60px;align-items:center}
+.anteprima img{max-width:100%;height:auto;image-rendering:pixelated;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+nav.tabs button{border:0;border-radius:0;background:transparent;min-height:60px;font-size:14px;color:var(--muted);border-top:3px solid transparent;padding:6px 2px}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-top-color:var(--accent)}
+nav.tabs .n{display:inline-block;min-width:20px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:12px;margin-left:3px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);
+  padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:40;max-width:calc(100% - 32px);text-align:center}
+.attesa{position:fixed;inset:0;z-index:35;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center}
+.attesa div{background:var(--surface);color:var(--ink);padding:16px 22px;border-radius:12px;font-weight:600;box-shadow:0 4px 18px rgba(0,0,0,.3)}
+
+/* lettura con fotocamera: la fotocamera e' disegnata DIETRO la pagina, che diventa trasparente */
+body.barcode-scanner-active{background:transparent!important}
+body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:none!important}
+#scanner{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
+.sc-top,.sc-bottom{background:rgba(10,12,11,.72);color:#fff;border-radius:14px;padding:12px 14px}
+.mirino{align-self:center;width:min(80vw,360px);aspect-ratio:1.8;border:3px solid rgba(255,255,255,.9);border-radius:16px;
+  box-shadow:0 0 0 2000px rgba(0,0,0,.18)}
+.sc-bottom{display:flex;gap:10px}
+.sc-bottom button{flex:1;min-height:56px;font-size:17px;border:0}
+.sc-bottom .stop{background:#fff;color:#111}
+.sc-bottom .luce{background:rgba(255,255,255,.18);color:#fff;flex:0 0 auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top wrap">
+    <div class="top-row">
+      <span class="brand">Etichette SAP</span>
+      <span class="sess" id="srvLabel">Server non impostato</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="banners"></div>
+
+    <!-- ARTICOLI: lettura codice a barre o ricerca in SAP -->
+    <section id="tab-art" class="tabp">
+      <button id="camBtn" class="primary big cam-btn" type="button">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10 8v8M13 8v8M16 8v8"/></svg>
+        Leggi con la fotocamera</button>
+      <div class="scan">
+        <input id="scanIn" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Codice, descrizione o EAN" enterkeyhint="search" aria-label="Codice a barre, codice articolo o descrizione">
+        <button type="button" id="cercaBtn">Cerca</button>
+      </div>
+      <div id="risultati" class="card" hidden><div class="list" id="risList"></div></div>
+      <div id="artBox" class="card g"></div>
+    </section>
+
+    <!-- DOCUMENTO: Entrata merci / Fattura fornitore -->
+    <section id="tab-doc" class="tabp" hidden>
+      <div class="card g">
+        <label class="f">Documento SAP</label>
+        <div class="chips">
+          <button class="chip" id="tipoEnt" type="button" aria-pressed="true">Entrata merci</button>
+          <button class="chip" id="tipoFat" type="button" aria-pressed="false">Fattura fornitore</button>
+        </div>
+        <div class="row">
+          <div class="grow"><label class="f" for="docNum">Numero</label><input id="docNum" type="number" inputmode="numeric" placeholder="Es. 1234"></div>
+          <div style="width:110px"><label class="f" for="docAnno">Anno</label><input id="docAnno" type="number" inputmode="numeric" placeholder="ultimo"></div>
+        </div>
+        <button type="button" id="docCarica" class="primary">Carica da SAP</button>
+      </div>
+      <div id="docBox" hidden class="g">
+        <div class="card g">
+          <div><b id="docTit"></b><div class="small" id="docInt"></div></div>
+          <div class="row"><button type="button" id="docTutti">Tutti</button><button type="button" id="docNessuno">Nessuno</button>
+            <select id="docUm" class="grow" style="width:auto" aria-label="Codice a barre per tutti"></select></div>
+        </div>
+        <div class="card"><div class="list" id="docList"></div></div>
+        <div class="card g">
+          <div class="small" id="docTot"></div>
+          <button type="button" id="docStampa" class="primary big">Stampa etichette</button>
+          <button type="button" id="docLista">Aggiungi alla lista da stampare</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DA STAMPARE -->
+    <section id="tab-lista" class="tabp" hidden>
+      <div id="esito"></div>
+      <div class="card g" id="listaTesta">
+        <div class="row"><span class="grow small" id="listaTot"></span>
+          <select id="listaUm" style="width:auto" aria-label="Codice a barre per tutti"></select></div>
+      </div>
+      <div class="card"><div class="list" id="listaList"></div></div>
+      <div class="card g" id="listaAzioni">
+        <button type="button" id="stampaEt" class="primary big">Stampa etichette</button>
+        <button type="button" id="stampaCart">Stampa cartellini da scaffale</button>
+        <p class="small" style="margin:0">Cartellini: uno per articolo, sul rotolo dei cartellini.</p>
+        <div class="row"><button type="button" id="svuota">Svuota la lista</button>
+          <button type="button" id="svuotaConf" class="danger" hidden>Conferma: svuota</button></div>
+      </div>
+    </section>
+
+    <!-- IMPOSTAZIONI -->
+    <section id="tab-imp" class="tabp" hidden>
+      <h2>Operatore</h2>
+      <div class="card g">
+        <label class="f" for="nomeOp">Il tuo nome (compare sul server)</label>
+        <input id="nomeOp" type="text" placeholder="Es. Mario" autocomplete="name">
+      </div>
+      <h2>Collegamento al server</h2>
+      <div class="card g">
+        <p class="small" style="margin:0">Il telefono deve essere sul Wi-Fi dell'azienda e sul server deve essere aperto il programma <b>Etichette SAP</b>. Indirizzo e codice sono scritti nella scheda <b>Inventario</b> del programma (sono gli stessi di Conta Magazzino).</p>
+        <label class="f" for="srvAddr">Indirizzo del server</label>
+        <input id="srvAddr" type="text" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Es. 192.168.1.10:8766">
+        <label class="f" for="srvCod">Codice di accesso</label>
+        <input id="srvCod" type="text" inputmode="numeric" autocomplete="off" placeholder="6 cifre">
+        <button type="button" id="srvProva" class="primary">Prova collegamento</button>
+        <div id="srvInfo" class="small"></div>
+      </div>
+      <h2>Lettura</h2>
+      <div class="card g">
+        <label class="opt"><input id="optLaser" type="checkbox"> <span>Palmare con lettore laser (non aprire la tastiera)</span></label>
+        <label class="opt"><input id="optSuono" type="checkbox" checked> <span>Suono e vibrazione a ogni lettura</span></label>
+        <label class="opt"><input id="optDiretto" type="checkbox"> <span>Dopo la lettura aggiungi subito 1 etichetta alla lista (senza aprire la scheda articolo)</span></label>
+      </div>
+      <p class="small" id="versione"></p>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Sezioni"><div class="in" role="tablist">
+    <button role="tab" data-tab="art" aria-selected="true">Articoli</button>
+    <button role="tab" data-tab="doc" aria-selected="false">Documento</button>
+    <button role="tab" data-tab="lista" aria-selected="false">Da stampare<span class="n" id="nLista" hidden></span></button>
+    <button role="tab" data-tab="imp" aria-selected="false">Impostaz.</button>
+  </div></nav>
+</div>
+
+<div id="scanner" hidden>
+  <div class="sc-top"><div style="font-size:14px;color:#d4d8d5">Inquadra il codice a barre dell'articolo</div></div>
+  <div class="mirino"></div>
+  <div class="sc-bottom">
+    <button class="luce" id="luceBtn" type="button" aria-label="Accendi o spegni la torcia">Torcia</button>
+    <button class="stop" id="stopBtn" type="button">Annulla</button>
+  </div>
+</div>
+<div id="attesa" class="attesa" hidden><div id="attesaTxt">Attendi…</div></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+"use strict";
+const CAP = window.Capacitor;
+const NATIVO = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
+const P = (CAP && CAP.Plugins) || {};
+const PORTA = 8766;   // la stessa di Conta Magazzino: risponde il programma Etichette SAP
+
+/* Articolo (come lo manda il server): {codice, descrizione, ean, um, prezzo (testo), barcode:[[codice, UM, nome UM, prezzo]]}
+   Nella lista da stampare e nel documento si aggiunge qta (e on, per le righe del documento). */
+const S = {lista:[], ris:[], sel:null, doc:null, tipoDoc:"entrata", info:null,
+  laser:false, suono:true, diretto:false, nome:"", torcia:false, srv:{addr:"", cod:""}, esito:null};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem("et:" + k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem("et:" + k, JSON.stringify(v)); }catch{} }
+};
+const intero = v => { const n = parseInt(String(v).trim(), 10); return isNaN(n) ? NaN : n; };
+
+/* ------------------------------------------------------------ segnali */
+let toastT;
+function toast(msg, lungo){ const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, lungo ? 4500 : 2600); }
+let audio;
+function beep(ok){
+  if (!S.suono) return;
+  try{ audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = ok ? 1320 : 330; o.type = ok ? "sine" : "square";
+    g.gain.setValueAtTime(.15, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + (ok ? .09 : .25));
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? .1 : .26)); }catch{}
+  try{ navigator.vibrate && navigator.vibrate(ok ? 35 : [70, 50, 70]); }catch{}
+}
+let attese = 0;
+function attesa(testo){ attese++; $("attesaTxt").textContent = testo; $("attesa").hidden = false; }
+function fineAttesa(){ attese = Math.max(0, attese - 1); if (!attese) $("attesa").hidden = true; }
+
+/* ------------------------------------------------------------ collegamento al server */
+function baseServer(){
+  let a = (S.srv.addr || "").trim().replace(/\s+/g, ""); if (!a) return "";
+  if (!/^https?:\/\//i.test(a)) a = "http://" + a;
+  a = a.replace(/\/+$/, "");
+  if (!/:\d+$/.test(a.replace(/^https?:\/\//i, ""))) a += ":" + PORTA;
+  return a;
+}
+const NON_RAGGIUNGIBILE = "Server non raggiungibile. Controlla che il telefono sia sul Wi-Fi dell'azienda, che il programma Etichette SAP sia aperto sul server e che l'indirizzo sia giusto.";
+async function chiama(metodo, percorso, corpo){
+  const base = baseServer(); if (!base) throw new Error("Scrivi l'indirizzo del server in Impostazioni.");
+  const url = base + percorso, headers = {"X-Codice":(S.srv.cod || "").trim()};
+  if (corpo) headers["Content-Type"] = "application/json";
+  let stato, dati;
+  if (NATIVO && P.CapacitorHttp){        // richiesta fatta dall'app, non dalla pagina: nessun blocco verso la rete interna
+    let r;
+    try{ r = await P.CapacitorHttp.request({url, method:metodo, headers, data:corpo, connectTimeout:7000, readTimeout:90000}); }
+    catch{ throw new Error(NON_RAGGIUNGIBILE); }
+    stato = r.status; dati = r.data;
+    if (typeof dati === "string"){ try{ dati = JSON.parse(dati); }catch{ dati = null; } }
+  } else {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 90000);
+    let r;
+    try{ r = await fetch(url, {method:metodo, headers, body:corpo ? JSON.stringify(corpo) : undefined, signal:ctl.signal}); }
+    catch{ throw new Error(NON_RAGGIUNGIBILE); } finally{ clearTimeout(t); }
+    stato = r.status; try{ dati = await r.json(); }catch{ dati = null; }
+  }
+  if (stato === 404 && !(dati && dati.errore && /etichette/i.test(dati.errore)) && percorso.startsWith("/etichette/"))
+    throw new Error("Il programma sul server non conosce ancora l'app Etichette: aggiorna i file del programma Etichette SAP.");
+  if (stato !== 200) throw new Error((dati && dati.errore) || (stato === 403 ? "Codice di accesso sbagliato." : "Il server ha risposto con un errore (" + stato + ")."));
+  if (!dati) throw new Error("Risposta del server non valida: l'indirizzo è quello del programma Etichette SAP?");
+  return dati;
+}
+function srvMsg(testo, tipo){ const el = $("srvInfo"); el.innerHTML = testo; el.style.color = tipo === "ok" ? "var(--ok)" : tipo === "bad" ? "var(--bad)" : ""; }
+async function provaServer(){
+  srvMsg("Provo il collegamento…");
+  try{
+    const r = await chiama("GET", "/ping");
+    if (r.programma !== "inventario-sap") throw new Error("A questo indirizzo non risponde il programma Etichette SAP.");
+    if (!r.etichette) throw new Error("Il programma Etichette SAP sul server va aggiornato per lavorare con questa app.");
+    const i = await chiama("GET", "/etichette/info"); S.info = i; LS.set("info", i);
+    srvMsg(`<b>Collegamento riuscito.</b><br>${i.azienda ? esc(i.azienda) + " · " : ""}listino ${esc(i.listino)}<br>Etichette (${esc(i.etichetta)}): ${esc(i.stampante)}<br>Cartellini (${esc(i.cartellino)}): ${esc(i.stampante_cartellini)}`, "ok");
+    renderTesta();
+  }catch(e){ srvMsg(esc(e.message), "bad"); }
+}
+
+/* ------------------------------------------------------------ articoli e codici a barre */
+function bcTesto(b){ return `${b[0]}${b[1] ? " · " + b[1] : ""}${b[3] ? " · " + b[3] : ""}`; }
+function usaBarcode(a, ean){
+  const b = (a.barcode || []).find(x => x[0] === ean); if (!b) return;
+  a.ean = b[0]; a.um = b[1]; a.prezzo = b[3];
+}
+function selectBarcode(a, attr){
+  const bcs = a.barcode || [];
+  if (bcs.length < 2) return `<div class="meta">${a.ean ? `<span class="tag">${esc(a.ean)}${a.um ? " · " + esc(a.um) : ""}</span>` : `<span class="tag warn">senza codice a barre</span>`}<b>${esc(a.prezzo || "senza prezzo")}</b></div>`;
+  return `<select ${attr}>${bcs.map(b => `<option value="${esc(b[0])}"${b[0] === a.ean ? " selected" : ""}>${esc(bcTesto(b))}</option>`).join("")}</select>`;
+}
+function umPresenti(righe){ const v = []; for (const a of righe) for (const b of a.barcode || []) if (b[1] && !v.includes(b[1])) v.push(b[1]); return v; }
+function popolaUm(sel, righe){
+  const um = umPresenti(righe);
+  sel.hidden = !um.length;
+  sel.innerHTML = `<option value="">Codice a barre per tutti…</option>` + um.map(u => `<option value="${esc(u)}">Tutti con UM ${esc(u)}</option>`).join("");
+}
+function applicaUm(righe, um){
+  let n = 0;
+  for (const a of righe){ const b = (a.barcode || []).find(x => x[1] === um); if (b){ usaBarcode(a, b[0]); n++; } }
+  return n;
+}
+
+/* ------------------------------------------------------------ ricerca e lettura */
+let cercando = false;
+async function cerca(testo, daLettura){
+  testo = (testo || "").trim(); if (testo.length < 2){ if (!daLettura) toast("Scrivi almeno 2 caratteri"); return; }
+  if (cercando) return; cercando = true;
+  attesa("Cerco in SAP…");
+  try{
+    const r = await chiama("GET", "/etichette/cerca?q=" + encodeURIComponent(testo));
+    S.ris = r.articoli || [];
+    if (daLettura) beep(S.ris.length > 0);
+    $("scanIn").value = "";
+    if (r.esatto && S.ris.length === 1){
+      $("risultati").hidden = true;
+      if (S.diretto && daLettura){ aggiungi(S.ris[0], 1); toast(`${S.ris[0].codice}: ${quanteInLista(S.ris[0])} in lista`); }
+      else apriArt(S.ris[0]);
+    } else renderRisultati(testo, r.altri);
+  }catch(e){ if (daLettura) beep(false); toast(e.message, true); }
+  finally{ cercando = false; fineAttesa(); focusScan(); }
+}
+function renderRisultati(testo, altri){
+  const box = $("risultati"); box.hidden = false;
+  $("risList").innerHTML = S.ris.length
+    ? S.ris.map((a, i) => `<div class="item tap" data-i="${i}"><div class="c">${esc(a.codice)}</div><div class="d">${esc(a.descrizione)}</div>
+        <div class="q"><b>${esc(a.prezzo || "-")}</b></div></div>`).join("") + (altri ? `<div class="empty">Mostrati i primi risultati: scrivi qualcosa in più.</div>` : "")
+    : `<div class="empty">Nessun articolo trovato in SAP per "${esc(testo)}".</div>`;
+}
+function apriArt(a){
+  S.sel = Object.assign({}, a, {qta:1});
+  $("risultati").hidden = true; renderArt(); vai("art", true); caricaAnteprima();
+}
+function quanteInLista(a){ const x = S.lista.find(r => r.codice === a.codice && r.ean === a.ean); return x ? x.qta : 0; }
+function renderArt(){
+  const a = S.sel, box = $("artBox");
+  if (!a){ box.innerHTML = `<div class="empty">Leggi il codice a barre di un articolo oppure cercalo per codice o descrizione.<br>Per un'Entrata merci o una Fattura fornitore usa la scheda <b>Documento</b>.</div>`; return; }
+  const gia = quanteInLista(a);
+  box.innerHTML = `
+    <div><div class="code">${esc(a.codice)}</div><div>${esc(a.descrizione)}</div></div>
+    <div class="row"><span class="prezzo grow">${esc(a.prezzo || "Senza prezzo")}</span>${a.um ? `<span class="tag">${esc(a.um)}</span>` : ""}</div>
+    ${(a.barcode || []).length > 1 ? `<label class="f" for="selBc">Codice a barre sull'etichetta</label>${selectBarcode(a, 'id="selBc"')}` : selectBarcode(a, "")}
+    <div class="anteprima" id="antBox"><span class="small">Anteprima…</span></div>
+    <label class="f" for="qIn">Etichette</label>
+    <div class="qty">
+      <button type="button" id="qMeno" aria-label="Togli una">−</button>
+      <input id="qIn" type="number" inputmode="numeric" min="0" max="999" step="1" value="${a.qta}" aria-label="Numero di etichette">
+      <button type="button" id="qPiu" aria-label="Aggiungi una">+</button>
+    </div>
+    ${gia ? `<div class="small">Già nella lista da stampare: <b>${gia}</b>. "Aggiungi" le somma.</div>` : ""}
+    <div class="row"><button type="button" id="aStampa" class="primary grow">Stampa subito</button><button type="button" id="aLista" class="grow">Aggiungi alla lista</button></div>
+    <div class="row"><button type="button" id="aCart" class="grow">Stampa cartellino</button><button type="button" id="aChiudi" class="grow">Chiudi</button></div>`;
+  const leggi = () => { const v = intero($("qIn").value); return isNaN(v) || v < 0 || v > 999 ? null : v; };
+  $("qMeno").onclick = () => { S.sel.qta = Math.max(0, (leggi() ?? 1) - 1); $("qIn").value = S.sel.qta; };
+  $("qPiu").onclick = () => { S.sel.qta = Math.min(999, (leggi() ?? 0) + 1); $("qIn").value = S.sel.qta; };
+  $("qIn").oninput = () => { const v = leggi(); if (v !== null) S.sel.qta = v; };
+  if ($("selBc")) $("selBc").onchange = e => { usaBarcode(S.sel, e.target.value); renderArt(); caricaAnteprima(); };
+  $("aChiudi").onclick = () => { S.sel = null; renderArt(); focusScan(); };
+  $("aLista").onclick = () => { const v = leggi(); if (!v){ toast("Indica quante etichette"); return; }
+    aggiungi(S.sel, v); toast(`${S.sel.codice}: ${quanteInLista(S.sel)} etichette in lista`); S.sel = null; renderArt(); focusScan(); };
+  $("aStampa").onclick = () => { const v = leggi(); if (!v){ toast("Indica quante etichette"); return; }
+    stampa("etichette", [{codice:S.sel.codice, ean:S.sel.ean, qta:v}], () => { S.sel = null; renderArt(); focusScan(); }); };
+  $("aCart").onclick = () => stampa("cartellini", [{codice:S.sel.codice, ean:S.sel.ean, qta:1}]);
+  $("qIn").onkeydown = e => { if (e.key === "Enter"){ e.preventDefault(); $("aLista").click(); } };
+}
+let antSeq = 0;
+async function caricaAnteprima(){
+  const a = S.sel; if (!a) return; const n = ++antSeq;
+  try{
+    const r = await chiama("POST", "/etichette/anteprima", {codice:a.codice, ean:a.ean, tipo:"etichette"});
+    if (n !== antSeq || !$("antBox")) return;
+    $("antBox").innerHTML = `<img alt="Anteprima dell'etichetta" src="data:image/png;base64,${r.png}" width="${r.larghezza}" height="${r.altezza}">`;
+  }catch(e){ if (n === antSeq && $("antBox")) $("antBox").innerHTML = `<span class="small">${esc(e.message)}</span>`; }
+}
+
+/* ------------------------------------------------------------ lista da stampare */
+function salvaLista(){ LS.set("lista", S.lista); }
+function aggiungi(a, qta){
+  const x = S.lista.find(r => r.codice === a.codice && r.ean === a.ean);
+  if (x) x.qta = Math.min(999, x.qta + qta);
+  else S.lista.unshift({codice:a.codice, descrizione:a.descrizione, ean:a.ean, um:a.um, prezzo:a.prezzo, barcode:a.barcode || [], qta:Math.min(999, qta)});
+  salvaLista(); render();
+}
+function totale(righe){ return righe.reduce((t, r) => t + (r.qta || 0), 0); }
+function renderLista(){
+  const n = S.lista.length, tot = totale(S.lista);
+  $("nLista").hidden = !n; $("nLista").textContent = n;
+  $("listaTesta").hidden = !n; $("listaAzioni").hidden = !n;
+  $("listaTot").textContent = `${n} articol${n === 1 ? "o" : "i"} · ${tot} etichett${tot === 1 ? "a" : "e"}`;
+  $("stampaEt").textContent = `Stampa ${tot} etichett${tot === 1 ? "a" : "e"}`; $("stampaEt").disabled = !tot;
+  $("stampaCart").textContent = `Stampa ${n} cartellin${n === 1 ? "o" : "i"} da scaffale`;
+  popolaUm($("listaUm"), S.lista);
+  $("esito").innerHTML = S.esito ? `<div class="banner ok">${esc(S.esito)}</div>` : "";
+  $("listaList").innerHTML = n ? S.lista.map((r, i) => `<div class="item">
+      <div class="c">${esc(r.codice)}</div>
+      <div class="d">${esc(r.descrizione)}${selectBarcode(r, `data-bc="${i}"`)}</div>
+      <div class="q"><input type="number" inputmode="numeric" min="0" max="999" step="1" value="${r.qta}" data-q="${i}" aria-label="Etichette ${esc(r.codice)}">
+        <button type="button" data-del="${i}" aria-label="Togli ${esc(r.codice)}">✕</button></div></div>`).join("")
+    : `<div class="empty">La lista è vuota. Aggiungi articoli dalle schede <b>Articoli</b> o <b>Documento</b>.</div>`;
+}
+
+/* ------------------------------------------------------------ documento SAP */
+async function caricaDoc(){
+  const num = intero($("docNum").value), anno = $("docAnno").value.trim();
+  if (isNaN(num) || num <= 0){ toast("Scrivi il numero del documento"); $("docNum").focus(); return; }
+  if (anno && !/^\d{4}$/.test(anno)){ toast("L'anno deve avere 4 cifre, oppure lascialo vuoto"); return; }
+  attesa("Leggo il documento da SAP…");
+  try{
+    const r = await chiama("GET", `/etichette/documento?tipo=${S.tipoDoc}&numero=${num}${anno ? "&anno=" + anno : ""}`);
+    r.righe.forEach(x => x.on = x.qta > 0);
+    S.doc = r; LS.set("doc", r); renderDoc();
+    if (!r.righe.length) toast("Il documento non ha articoli di magazzino da etichettare", true);
+    else if (r.altri_anni) toast(`Ci sono documenti con questo numero in più anni: mostrato quello del ${r.anno}`, true);
+  }catch(e){ toast(e.message, true); }
+  finally{ fineAttesa(); }
+}
+function scelteDoc(){ return S.doc ? S.doc.righe.filter(x => x.on && x.qta > 0) : []; }
+function renderDoc(){
+  $("tipoEnt").setAttribute("aria-pressed", String(S.tipoDoc === "entrata")); $("tipoFat").setAttribute("aria-pressed", String(S.tipoDoc === "fattura"));
+  const d = S.doc; $("docBox").hidden = !d; if (!d) return;
+  $("docTit").textContent = d.titolo; $("docInt").textContent = d.intestatario || "";
+  popolaUm($("docUm"), d.righe);
+  const sc = scelteDoc(), tot = totale(sc);
+  $("docTot").textContent = `${sc.length} articoli scelti su ${d.righe.length} · ${tot} etichette`;
+  $("docStampa").textContent = `Stampa ${tot} etichett${tot === 1 ? "a" : "e"}`; $("docStampa").disabled = !tot; $("docLista").disabled = !tot;
+  $("docList").innerHTML = d.righe.length ? d.righe.map((r, i) => `<div class="item chk${r.on ? "" : " off"}">
+      <label class="ck"><input type="checkbox" data-on="${i}"${r.on ? " checked" : ""} aria-label="Stampa ${esc(r.codice)}"></label>
+      <div class="c">${esc(r.codice)}</div>
+      <div class="d">${esc(r.descrizione)}${selectBarcode(r, `data-bc="${i}"`)}</div>
+      <div class="q"><input type="number" inputmode="numeric" min="0" max="999" step="1" value="${r.qta}" data-q="${i}" aria-label="Etichette ${esc(r.codice)}"></div></div>`).join("")
+    : `<div class="empty">Nessun articolo di magazzino in questo documento.</div>`;
+}
+
+/* ------------------------------------------------------------ stampa */
+let stampando = false;
+async function stampa(tipo, righe, fatto){
+  righe = righe.filter(r => r.qta > 0);
+  if (!righe.length){ toast("Niente da stampare"); return; }
+  if (tipo === "cartellini") righe = righe.map(r => ({codice:r.codice, ean:r.ean, qta:1}));
+  const tot = totale(righe), soglia = (S.info && S.info.conferma_sopra) || 20;
+  if (tipo === "etichette" && tot > soglia && !confirm(`Stampare ${tot} etichette?`)) return;
+  if (tipo === "cartellini" && righe.length > 1 && !confirm(`Stampare ${righe.length} cartellini?\n\nControlla che nella stampante ci sia il rotolo dei cartellini.`)) return;
+  if (stampando) return; stampando = true;
+  const corpo = {tipo, operatore:S.nome || "", righe};
+  attesa(tipo === "cartellini" ? "Invio i cartellini alla stampante…" : `Invio ${tot} etichette alla stampante…`);
+  try{
+    let r = await chiama("POST", "/etichette/stampa", corpo);
+    if (!r.ok && r.conferma){
+      fineAttesa();
+      if (!confirm(r.conferma)){ toast("Stampa annullata"); return; }
+      attesa("Invio i cartellini alla stampante…");
+      r = await chiama("POST", "/etichette/stampa", Object.assign(corpo, {forza:true}));
+    }
+    if (!r.ok) throw new Error("La stampa non è partita.");
+    beep(true);
+    const cosa = tipo === "cartellini" ? "cartellin" + (r.stampate === 1 ? "o" : "i") : "etichett" + (r.stampate === 1 ? "a" : "e");
+    const msg = `Stampat${tipo === "cartellini" ? (r.stampate === 1 ? "o" : "i") : (r.stampate === 1 ? "a" : "e")} ${r.stampate} ${cosa} su ${r.stampante} alle ${new Date().toLocaleTimeString("it-IT", {hour:"2-digit", minute:"2-digit"})}.`;
+    toast(msg + (r.avviso ? " " + r.avviso : ""), true);
+    S.esito = msg + (r.avviso ? " " + r.avviso : "");
+    if (fatto) fatto(r);
+    render();
+  }catch(e){ beep(false); toast(e.message, true); }
+  finally{ stampando = false; fineAttesa(); }
+}
+
+/* ------------------------------------------------------------ fotocamera (ML Kit) */
+let ascoltatore = null;
+async function avviaScansione(){
+  if (!NATIVO || !P.BarcodeScanner){ toast("La fotocamera funziona nell'app installata sul telefono"); return; }
+  try{
+    let perm = await P.BarcodeScanner.checkPermissions();
+    if (perm.camera !== "granted") perm = await P.BarcodeScanner.requestPermissions();
+    if (perm.camera !== "granted"){ toast("Serve il permesso della fotocamera: abilitalo nelle impostazioni del telefono"); return; }
+    document.body.classList.add("barcode-scanner-active"); $("scanner").hidden = false; S.torcia = false; $("luceBtn").textContent = "Torcia";
+    let letto = false;
+    ascoltatore = await P.BarcodeScanner.addListener("barcodesScanned", ev => {
+      const b = ev && ev.barcodes && ev.barcodes[0]; if (!b || !b.rawValue || letto) return;
+      letto = true; fermaScansione().then(() => cerca(b.rawValue, true));
+    });
+    await P.BarcodeScanner.startScan({formats:["EAN_13", "EAN_8", "UPC_A", "UPC_E", "CODE_128", "CODE_39", "CODE_93", "ITF", "CODABAR", "QR_CODE", "DATA_MATRIX"]});
+  }catch(e){ await fermaScansione(); toast("Fotocamera non disponibile: " + (e && e.message ? e.message : "errore")); }
+}
+async function fermaScansione(){
+  document.body.classList.remove("barcode-scanner-active"); $("scanner").hidden = true;
+  try{ if (ascoltatore){ await ascoltatore.remove(); ascoltatore = null; } }catch{}
+  try{ await P.BarcodeScanner.stopScan(); }catch{}
+}
+
+/* ------------------------------------------------------------ rendering ed eventi */
+function renderTesta(){
+  $("srvLabel").textContent = !baseServer() ? "Server non impostato" : S.info && S.info.azienda ? S.info.azienda : baseServer().replace(/^https?:\/\//, "");
+}
+function banners(){
+  const b = [];
+  if (!baseServer() || !S.srv.cod) b.push(`<div class="banner warn">Imposta indirizzo e codice del server in <b>Impostazioni</b>: li trovi nella scheda Inventario del programma Etichette SAP.</div>`);
+  $("banners").innerHTML = b.join("");
+}
+function render(){ renderArt(); renderLista(); renderDoc(); banners(); renderTesta(); }
+function vai(tab, senzaFuoco){
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll(".tabp").forEach(p => p.hidden = p.id !== "tab-" + tab);
+  window.scrollTo(0, 0);
+  banners();
+  if (tab === "art" && !senzaFuoco) focusScan();
+}
+function focusScan(){ if (S.laser && !$("tab-art").hidden) $("scanIn").focus({preventScroll:true}); }
+function applicaLaser(){ $("scanIn").setAttribute("inputmode", S.laser ? "none" : "search"); }
+
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => vai(b.dataset.tab));
+$("scanIn").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === "Tab"){ e.preventDefault(); cerca(e.target.value, S.laser); } });
+$("cercaBtn").onclick = () => cerca($("scanIn").value, false);
+$("risList").addEventListener("click", e => { const el = e.target.closest("[data-i]"); if (el) apriArt(S.ris[+el.dataset.i]); });
+$("camBtn").onclick = avviaScansione;
+$("stopBtn").onclick = fermaScansione;
+$("luceBtn").onclick = async () => { try{ await P.BarcodeScanner.toggleTorch(); S.torcia = !S.torcia; $("luceBtn").textContent = S.torcia ? "Spegni" : "Torcia"; }catch{ toast("Torcia non disponibile"); } };
+
+/* lista */
+$("listaList").addEventListener("change", e => { const t = e.target.dataset;
+  if (t.q !== undefined){ const r = S.lista[+t.q], v = intero(e.target.value);
+    if (isNaN(v) || v < 0 || v > 999){ e.target.value = r.qta; toast("Quantità non valida (da 0 a 999)"); return; }
+    r.qta = v; if (!v) S.lista.splice(+t.q, 1); }
+  else if (t.bc !== undefined){ const r = S.lista[+t.bc]; usaBarcode(r, e.target.value);
+    const doppio = S.lista.findIndex((x, i) => i !== +t.bc && x.codice === r.codice && x.ean === r.ean);
+    if (doppio >= 0){ S.lista[doppio].qta = Math.min(999, S.lista[doppio].qta + r.qta); S.lista.splice(+t.bc, 1); } }
+  salvaLista(); render(); });
+$("listaList").addEventListener("click", e => { const t = e.target.dataset; if (t.del === undefined) return;
+  S.lista.splice(+t.del, 1); salvaLista(); render(); });
+$("listaUm").onchange = e => { const um = e.target.value; if (!um) return; const n = applicaUm(S.lista, um);
+  const unite = []; for (const r of S.lista){ const x = unite.find(u => u.codice === r.codice && u.ean === r.ean); if (x) x.qta = Math.min(999, x.qta + r.qta); else unite.push(r); }
+  S.lista = unite; salvaLista(); render(); toast(`Codice a barre ${um} su ${n} articoli`); };
+$("stampaEt").onclick = () => stampa("etichette", S.lista.map(r => ({codice:r.codice, ean:r.ean, qta:r.qta})));
+$("stampaCart").onclick = () => stampa("cartellini", S.lista.map(r => ({codice:r.codice, ean:r.ean, qta:1})));
+$("svuota").onclick = () => { $("svuotaConf").hidden = false; };
+$("svuotaConf").onclick = () => { $("svuotaConf").hidden = true; S.lista = []; S.esito = null; salvaLista(); render(); toast("Lista svuotata"); };
+
+/* documento */
+$("tipoEnt").onclick = () => { S.tipoDoc = "entrata"; LS.set("tipoDoc", S.tipoDoc); renderDoc(); };
+$("tipoFat").onclick = () => { S.tipoDoc = "fattura"; LS.set("tipoDoc", S.tipoDoc); renderDoc(); };
+$("docCarica").onclick = caricaDoc;
+$("docNum").onkeydown = e => { if (e.key === "Enter"){ e.preventDefault(); caricaDoc(); } };
+$("docAnno").onkeydown = e => { if (e.key === "Enter"){ e.preventDefault(); caricaDoc(); } };
+$("docList").addEventListener("change", e => { const t = e.target.dataset, d = S.doc; if (!d) return;
+  if (t.on !== undefined) d.righe[+t.on].on = e.target.checked;
+  else if (t.q !== undefined){ const r = d.righe[+t.q], v = intero(e.target.value);
+    if (isNaN(v) || v < 0 || v > 999){ e.target.value = r.qta; toast("Quantità non valida (da 0 a 999)"); return; }
+    r.qta = v; r.on = v > 0; }
+  else if (t.bc !== undefined) usaBarcode(d.righe[+t.bc], e.target.value);
+  LS.set("doc", d); renderDoc(); });
+$("docTutti").onclick = () => { if (!S.doc) return; S.doc.righe.forEach(r => r.on = r.qta > 0); LS.set("doc", S.doc); renderDoc(); };
+$("docNessuno").onclick = () => { if (!S.doc) return; S.doc.righe.forEach(r => r.on = false); LS.set("doc", S.doc); renderDoc(); };
+$("docUm").onchange = e => { const um = e.target.value; if (!um || !S.doc) return; const n = applicaUm(S.doc.righe, um); LS.set("doc", S.doc); renderDoc(); toast(`Codice a barre ${um} su ${n} articoli`); };
+$("docStampa").onclick = () => stampa("etichette", scelteDoc().map(r => ({codice:r.codice, ean:r.ean, qta:r.qta})));
+$("docLista").onclick = () => { const sc = scelteDoc(); if (!sc.length) return;
+  for (const r of sc) aggiungi(r, r.qta); toast(`${sc.length} articoli aggiunti alla lista da stampare`); };
+
+/* impostazioni */
+/* niente render() qui: l'avviso in alto sparirebbe e il pulsante sotto il dito si sposterebbe */
+const salvaSrv = () => { S.srv = {addr:$("srvAddr").value.trim(), cod:$("srvCod").value.trim()}; LS.set("srv", S.srv); renderTesta(); };
+$("srvAddr").onchange = salvaSrv; $("srvCod").onchange = salvaSrv;
+$("srvProva").onclick = () => { salvaSrv(); provaServer(); };
+$("srvAddr").oninput = $("srvCod").oninput = () => srvMsg("");
+$("optLaser").onchange = e => { S.laser = e.target.checked; LS.set("laser", S.laser); applicaLaser(); };
+$("optSuono").onchange = e => { S.suono = e.target.checked; LS.set("suono", S.suono); };
+$("optDiretto").onchange = e => { S.diretto = e.target.checked; LS.set("diretto", S.diretto); };
+$("nomeOp").onchange = e => { S.nome = e.target.value.trim(); LS.set("nome", S.nome); };
+
+(function avvio(){
+  S.laser = LS.get("laser", false); S.suono = LS.get("suono", true); S.diretto = LS.get("diretto", false); S.nome = LS.get("nome", "");
+  S.srv = LS.get("srv", {addr:"", cod:""}); S.info = LS.get("info", null);
+  S.lista = LS.get("lista", []); S.doc = LS.get("doc", null); S.tipoDoc = LS.get("tipoDoc", "entrata");
+  $("srvAddr").value = S.srv.addr || ""; $("srvCod").value = S.srv.cod || "";
+  $("optLaser").checked = S.laser; $("optSuono").checked = S.suono; $("optDiretto").checked = S.diretto; $("nomeOp").value = S.nome; applicaLaser();
+  $("versione").textContent = NATIVO ? "App Etichette SAP" : "Anteprima nel browser (fotocamera disponibile solo nell'app)";
+  render();
+  if (!baseServer() || !S.srv.cod) vai("imp"); else focusScan();
+})();
+</script>
+</body>
+</html>

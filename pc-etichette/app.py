@@ -20,6 +20,7 @@ import sap_clabel as s
 import etichetta
 from finestra import TabellaEtichette, applica_stile
 import inventario
+import etichette_rete
 import prezzi
 from decimal import Decimal
 
@@ -438,12 +439,14 @@ class App:
     # --------------------------------------------- ricezione diretta dai telefoni
     def _avvia_ricezione(self):
         self.coda_ric = queue.Queue()
+        self.coda_stampe = queue.Queue()    # stampe chieste dall'app Etichette SAP
         self.ricevuti = {}          # id riga dell'elenco -> percorso
         cartella = self._cartella_export()
         try:
             codice = inventario.codice_accesso(cartella)
-            inventario.avvia_ricezione(cartella, codice, self.coda_ric.put)
-            self.info_rete.set(f"Per i telefoni:  indirizzo {inventario.indirizzo_locale()}:{inventario.PORTA}"
+            servizio = etichette_rete.ServizioEtichette(self.cfg, self.coda_stampe.put)
+            inventario.avvia_ricezione(cartella, codice, self.coda_ric.put, extra=servizio)
+            self.info_rete.set(f"Per i telefoni (Conta Magazzino ed Etichette SAP):  indirizzo {inventario.indirizzo_locale()}:{inventario.PORTA}"
                                f"   codice {codice}")
         except OSError as e:
             self.info_rete.set(f"Ricezione dai telefoni non attiva: la porta {inventario.PORTA} non si apre ({e}). "
@@ -463,6 +466,11 @@ class App:
             self.root.bell()
             self.stato.set(f"Conteggio ricevuto dal telefono ({datetime.now():%H:%M}). "
                            "Lo trovi nella scheda Inventario.")
+        try:
+            while True:
+                self.stato.set(self.coda_stampe.get_nowait())
+        except queue.Empty:
+            pass
         self.root.after(1000, self._controlla_coda)
 
     def _aggiorna_ricevuti(self):
