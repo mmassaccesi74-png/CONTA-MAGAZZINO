@@ -158,6 +158,8 @@ body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:n
         <div class="card"><div class="list" id="docList"></div></div>
         <div class="card g">
           <div class="small" id="docTot"></div>
+          <label class="f" for="stEtDoc">Stampante etichette</label>
+          <select id="stEtDoc" data-st="et"></select>
           <button type="button" id="docStampa" class="primary big">Stampa etichette</button>
           <button type="button" id="docLista">Aggiungi alla lista da stampare</button>
         </div>
@@ -170,6 +172,8 @@ body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:n
       <div class="card g" id="listaTesta">
         <div class="row"><span class="grow small" id="listaTot"></span>
           <select id="listaUm" style="width:auto" aria-label="Codice a barre per tutti"></select></div>
+        <label class="f" for="stEtLista">Stampante etichette</label>
+        <select id="stEtLista" data-st="et"></select>
       </div>
       <div class="card"><div class="list" id="listaList"></div></div>
       <div class="card g" id="listaAzioni">
@@ -197,6 +201,15 @@ body.barcode-scanner-active .app, body.barcode-scanner-active nav.tabs{display:n
         <input id="srvCod" type="text" inputmode="numeric" autocomplete="off" placeholder="6 cifre">
         <button type="button" id="srvProva" class="primary">Prova collegamento</button>
         <div id="srvInfo" class="small"></div>
+      </div>
+      <h2>Stampanti</h2>
+      <div class="card g">
+        <label class="f" for="stEt">Etichette</label>
+        <select id="stEt" data-st="et"></select>
+        <label class="f" for="stCart">Cartellini da scaffale</label>
+        <select id="stCart" data-st="cart"></select>
+        <button type="button" id="stAggiorna">Aggiorna elenco dal server</button>
+        <p class="small" style="margin:0">L'elenco è quello delle stampanti installate sul server. Accanto c'è il formato carta impostato nel driver.</p>
       </div>
       <h2>Lettura</h2>
       <div class="card g">
@@ -237,7 +250,8 @@ const PORTA = 8766;   // la stessa di Conta Magazzino: risponde il programma Eti
 /* Articolo (come lo manda il server): {codice, descrizione, ean, um, prezzo (testo), barcode:[[codice, UM, nome UM, prezzo]]}
    Nella lista da stampare e nel documento si aggiunge qta (e on, per le righe del documento). */
 const S = {lista:[], ris:[], sel:null, doc:null, tipoDoc:"entrata", info:null,
-  laser:false, suono:true, diretto:false, nome:"", torcia:false, srv:{addr:"", cod:""}, esito:null};
+  laser:false, suono:true, diretto:false, nome:"", torcia:false, srv:{addr:"", cod:""}, esito:null,
+  st:{et:"", cart:""}};   // stampanti scelte ("" = quella predefinita del programma sul server)
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const LS = {
@@ -304,8 +318,8 @@ async function provaServer(){
     if (r.programma !== "inventario-sap") throw new Error("A questo indirizzo non risponde il programma Etichette SAP.");
     if (!r.etichette) throw new Error("Il programma Etichette SAP sul server va aggiornato per lavorare con questa app.");
     const i = await chiama("GET", "/etichette/info"); S.info = i; LS.set("info", i);
-    srvMsg(`<b>Collegamento riuscito.</b><br>${i.azienda ? esc(i.azienda) + " · " : ""}listino ${esc(i.listino)}<br>Etichette (${esc(i.etichetta)}): ${esc(i.stampante)}<br>Cartellini (${esc(i.cartellino)}): ${esc(i.stampante_cartellini)}`, "ok");
-    renderTesta();
+    srvMsg(`<b>Collegamento riuscito.</b><br>${i.azienda ? esc(i.azienda) + " · " : ""}listino ${esc(i.listino)}<br>Etichette (${esc(i.etichetta)}): ${esc(nomeStampante("et"))}<br>Cartellini (${esc(i.cartellino)}): ${esc(nomeStampante("cart"))}`, "ok");
+    renderTesta(); renderStampanti();
   }catch(e){ srvMsg(esc(e.message), "bad"); }
 }
 
@@ -472,7 +486,7 @@ async function stampa(tipo, righe, fatto){
   if (tipo === "etichette" && tot > soglia && !confirm(`Stampare ${tot} etichette?`)) return;
   if (tipo === "cartellini" && righe.length > 1 && !confirm(`Stampare ${righe.length} cartellini?\n\nControlla che nella stampante ci sia il rotolo dei cartellini.`)) return;
   if (stampando) return; stampando = true;
-  const corpo = {tipo, operatore:S.nome || "", righe};
+  const corpo = {tipo, operatore:S.nome || "", righe, stampante:(tipo === "cartellini" ? S.st.cart : S.st.et) || ""};
   attesa(tipo === "cartellini" ? "Invio i cartellini alla stampante…" : `Invio ${tot} etichette alla stampante…`);
   try{
     let r = await chiama("POST", "/etichette/stampa", corpo);
@@ -526,7 +540,30 @@ function banners(){
   if (!baseServer() || !S.srv.cod) b.push(`<div class="banner warn">Imposta indirizzo e codice del server in <b>Impostazioni</b>: li trovi nella scheda Inventario del programma Etichette SAP.</div>`);
   $("banners").innerHTML = b.join("");
 }
-function render(){ renderArt(); renderLista(); renderDoc(); banners(); renderTesta(); }
+function render(){ renderArt(); renderLista(); renderDoc(); banners(); renderTesta(); renderStampanti(); }
+
+/* ------------------------------------------------------------ scelta della stampante */
+function predefinita(quale){
+  const i = S.info; if (!i) return "";
+  return quale === "cart" ? (i.stampante_cartellini || "") : (i.stampante || "");
+}
+function nomeStampante(quale){ return S.st[quale] || predefinita(quale) || "predefinita del programma"; }
+function renderStampanti(){
+  const elenco = (S.info && S.info.stampanti) || [];
+  document.querySelectorAll("select[data-st]").forEach(sel => {
+    const quale = sel.dataset.st, val = S.st[quale] || "";
+    const pred = predefinita(quale);
+    let html = `<option value="">Predefinita del programma${pred ? " (" + esc(pred) + ")" : ""}</option>`;
+    html += elenco.map(p => `<option value="${esc(p.nome)}">${esc(p.nome)}${p.formato ? " · " + esc(p.formato) : ""}</option>`).join("");
+    if (val && !elenco.some(p => p.nome === val)) html += `<option value="${esc(val)}">${esc(val)} (non trovata sul server)</option>`;
+    sel.innerHTML = html; sel.value = val;
+  });
+}
+async function aggiornaStampanti(silenzioso){
+  try{ const i = await chiama("GET", "/etichette/info"); S.info = i; LS.set("info", i); renderStampanti(); renderTesta();
+    if (!silenzioso) toast(`${(i.stampanti || []).length} stampanti trovate sul server`); }
+  catch(e){ if (!silenzioso) toast(e.message, true); }
+}
 function vai(tab, senzaFuoco){
   document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
   document.querySelectorAll(".tabp").forEach(p => p.hidden = p.id !== "tab-" + tab);
@@ -594,16 +631,21 @@ $("optLaser").onchange = e => { S.laser = e.target.checked; LS.set("laser", S.la
 $("optSuono").onchange = e => { S.suono = e.target.checked; LS.set("suono", S.suono); };
 $("optDiretto").onchange = e => { S.diretto = e.target.checked; LS.set("diretto", S.diretto); };
 $("nomeOp").onchange = e => { S.nome = e.target.value.trim(); LS.set("nome", S.nome); };
+document.querySelectorAll("select[data-st]").forEach(sel => sel.onchange = e => {
+  S.st[sel.dataset.st] = e.target.value; LS.set("st", S.st); renderStampanti();
+  toast(`${sel.dataset.st === "cart" ? "Cartellini" : "Etichette"}: ${nomeStampante(sel.dataset.st)}`); });
+$("stAggiorna").onclick = () => aggiornaStampanti(false);
 
 (function avvio(){
   S.laser = LS.get("laser", false); S.suono = LS.get("suono", true); S.diretto = LS.get("diretto", false); S.nome = LS.get("nome", "");
   S.srv = LS.get("srv", {addr:"", cod:""}); S.info = LS.get("info", null);
   S.lista = LS.get("lista", []); S.doc = LS.get("doc", null); S.tipoDoc = LS.get("tipoDoc", "entrata");
+  S.st = Object.assign({et:"", cart:""}, LS.get("st", {}));
   $("srvAddr").value = S.srv.addr || ""; $("srvCod").value = S.srv.cod || "";
   $("optLaser").checked = S.laser; $("optSuono").checked = S.suono; $("optDiretto").checked = S.diretto; $("nomeOp").value = S.nome; applicaLaser();
   $("versione").textContent = NATIVO ? "App Etichette SAP" : "Anteprima nel browser (fotocamera disponibile solo nell'app)";
   render();
-  if (!baseServer() || !S.srv.cod) vai("imp"); else focusScan();
+  if (!baseServer() || !S.srv.cod) vai("imp"); else { focusScan(); aggiornaStampanti(true); }
 })();
 </script>
 </body>

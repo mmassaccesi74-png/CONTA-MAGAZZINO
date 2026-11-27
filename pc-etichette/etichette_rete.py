@@ -10,7 +10,7 @@ Il programma legge SAP e stampa sulla Toshiba: il telefono sceglie solo articoli
   GET  /etichette/cerca?q=testo                     ricerca per codice, descrizione o codice a barre
   GET  /etichette/documento?tipo=entrata&numero=N&anno=AAAA   righe di Entrata merci / Fattura fornitore
   POST /etichette/anteprima  {codice, ean, tipo}    immagine PNG dell'etichetta o del cartellino
-  POST /etichette/stampa     {tipo, righe:[{codice, ean, qta}], operatore, forza}
+  POST /etichette/stampa     {tipo, righe:[{codice, ean, qta}], operatore, forza, stampante (facoltativa)}
 
 Prezzi e descrizioni vengono sempre riletti da SAP al momento della stampa.
 """
@@ -119,7 +119,26 @@ class ServizioEtichette:
                 "stampante_cartellini": imp_c["stampante"] or imp["nome"] or "(come le etichette)",
                 "etichetta": f"{imp['larghezza_mm']:g} x {imp['altezza_mm']:g} mm",
                 "cartellino": f"{imp_c['larghezza_mm']:g} x {imp_c['altezza_mm']:g} mm",
-                "conferma_sopra": imp["conferma_sopra"], "um_preferita": self._um_preferita()}
+                "conferma_sopra": imp["conferma_sopra"], "um_preferita": self._um_preferita(),
+                "stampanti": self._stampanti()}
+
+    @staticmethod
+    def _stampanti():
+        """Le stampanti installate sul server, con il formato carta del driver (per sceglierle dal telefono)."""
+        import etichetta
+        elenco = []
+        try:
+            nomi = etichetta.elenco_stampanti()
+        except BaseException:
+            return elenco
+        for nome in nomi:
+            try:
+                w, h, _ = etichetta.info_pagina(nome)
+                formato = f"{w:.0f} x {h:.0f} mm"
+            except BaseException:
+                formato = ""
+            elenco.append({"nome": nome, "formato": formato})
+        return elenco
 
     def _azienda(self):
         def leggi(conn):
@@ -245,6 +264,14 @@ class ServizioEtichette:
         lista = self._articoli_richiesti(dati.get("righe"))
         chi = str(dati.get("operatore") or "").strip()[:40]
         forza = bool(dati.get("forza"))
+        scelta = str(dati.get("stampante") or "").strip()
+        if scelta:
+            try:
+                installate = etichetta.elenco_stampanti()
+            except BaseException:
+                installate = []
+            if scelta not in installate:
+                raise ErroreEtichette(f"La stampante \"{scelta}\" non c'e' piu' sul server: scegline un'altra in Impostazioni (Aggiorna elenco).")
         try:
             if tipo == "cartellini":
                 imp = s.impostazioni_cartellino(self.cfg)
@@ -252,11 +279,11 @@ class ServizioEtichette:
                 self._interroga(s.contenuti, articoli, imp)
                 negozio = "" if imp["nome_negozio"] else self._azienda()
                 lavori = s.prepara_cartellini([(a, q) for a, q in lista], self.cfg, imp, negozio)
-                nome = etichetta.scegli_stampante(imp["stampante"] or s.impostazioni_etichetta(self.cfg)["nome"])
+                nome = scelta or etichetta.scegli_stampante(imp["stampante"] or s.impostazioni_etichetta(self.cfg)["nome"])
             else:
                 imp = s.impostazioni_etichetta(self.cfg)
                 lavori = s.prepara_lavori(lista, self.cfg, imp)
-                nome = etichetta.scegli_stampante(imp["nome"])
+                nome = scelta or etichetta.scegli_stampante(imp["nome"])
             totale = sum(q for _, q in lavori)
             if totale > MAX_ETICHETTE:
                 raise ErroreEtichette(f"Troppe etichette in una volta ({totale}, massimo {MAX_ETICHETTE}): dividi la stampa.")
